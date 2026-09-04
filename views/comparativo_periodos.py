@@ -49,7 +49,7 @@ def renderizar(*args, **kwargs):
         data_fim_a = st.date_input("Fim Período A:", value=None, min_value=min_date, max_value=max_date, format="DD/MM/YYYY", key="comp_p_a_fim")
 
     with c_p2:
-        st.success("📌 **Período B (Recente / Mais Atual)**")
+        st.success("📌 **Período B (Recent / Mais Atual)**")
         data_ini_b = st.date_input("Início Período B:", value=None, min_value=min_date, max_value=max_date, format="DD/MM/YYYY", key="comp_p_b_ini")
         data_fim_b = st.date_input("Fim Período B:", value=None, min_value=min_date, max_value=max_date, format="DD/MM/YYYY", key="comp_p_b_fim")
 
