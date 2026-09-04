@@ -37,8 +37,8 @@ def renderizar(*args, **kwargs):
     df_base_comp = df_base_comp.dropna(subset=['dt_abertura'])
 
     dt_validas_comp = df_base_comp['dt_abertura'].dropna()
-    min_date = date(2020, 1, 1)
-    max_date = date(2026, 12, 31)
+    min_date = dt_validas_comp.min().date() if not dt_validas_comp.empty else date(2020, 1, 1)
+    max_date = dt_validas_comp.max().date() if not dt_validas_comp.empty else date(2026, 12, 31)
 
     st.markdown("#### 📅 Seleção dos Períodos para Comparação")
 
