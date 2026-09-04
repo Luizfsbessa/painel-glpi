@@ -34,14 +34,14 @@ st.caption("Plataforma de inteligência e acompanhamento de chamados (Frescatto)
 
 # --- CARREGAMENTO AUTOMÁTICO DA BASE DE DADOS ---
 # Utiliza diretamente o arquivo padrão embutido no repositório
-dict_bases = carregar_e_tratar_dados(settings.CAMINHO_PADRAO_LOCAL) if os.path.exists(settings.CAMINHO_PADRAO_LOCAL) else {}
+dict_bases = carregar_e_tratar_dados("relatorio glpi.xlsx") if os.path.exists("relatorio glpi.xlsx") else {}
 
 df_raw = dict_bases.get("Chamados", pd.DataFrame())
 df_problemas = dict_bases.get("Problemas", pd.DataFrame())
 df_mudancas = dict_bases.get("Mudanças", pd.DataFrame())
 
 if df_raw.empty:
-    st.error(f"⚠️ O arquivo de dados padrão não foi encontrado ou está vazio no caminho: `{settings.CAMINHO_PADRAO_LOCAL}`. Verifique se ele foi enviado para o repositório.")
+    st.error(f"⚠️ O arquivo de dados padrão não foi encontrado ou está vazio no caminho: `relatorio glpi.xlsx`. Verifique se ele foi enviado para o repositório.")
     st.stop()
 
 cols = {
