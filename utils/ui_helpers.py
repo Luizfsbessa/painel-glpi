@@ -4,6 +4,23 @@ def aplicar_estilos_customizados():
     """Injeta estilos CSS customizados para alinhar componentes e formatar tabelas."""
     st.markdown("""
         <style>
+            /* Restaura o cabeçalho no topo e remove a linha divisória inferior dele */
+            section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] {
+                border-bottom: none !important;
+                padding-bottom: 0px !important;
+                min-height: 40px !important;
+            }
+            
+            /* Remove o padding superior excessivo da sidebar para colar no topo */
+            section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+                padding-top: 0rem !important;
+            }
+            
+            /* Remove todas as linhas divisórias (hr) geradas na sidebar */
+            section[data-testid="stSidebar"] hr {
+                display: none !important;
+            }
+            
             div[data-testid="stHorizontalBlock"]:has(div[data-testid="stDateInput"]),
             div[data-testid="stHorizontalBlock"]:has(div[data-testid="stSelectbox"]) {
                 min-height: 85px !important;
@@ -12,11 +29,11 @@ def aplicar_estilos_customizados():
             div[data-testid="stDateInput"], div[data-testid="stSelectbox"] {
                 min-height: 75px !important;
             }
-            div[data-testid="stDataFrame"] th { 
-                text-align: center !important; 
-                font-weight: 800 !important; 
-                white-space: normal !important; 
-                word-wrap: break-word !important; 
+            div[data-testid="stDataFrame"] th {
+                text-align: center !important;
+                font-weight: 800 !important;
+                white-space: normal !important;
+                word-wrap: break-word !important;
             }
             section[data-testid="stSidebar"] div[data-testid="stPopover"] {
                 z-index: 999999 !important;

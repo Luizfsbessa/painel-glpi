@@ -2,6 +2,7 @@ import os
 import unicodedata
 import streamlit as st
 import pandas as pd
+import base64
 from datetime import time, date
 
 # Importações de Módulos Locais
@@ -33,7 +34,7 @@ st.title("📊 Painel Gerencial & Relatórios GLPI")
 st.caption("Plataforma de inteligência e acompanhamento de chamados (Frescatto)")
 
 # --- CARREGAMENTO AUTOMÁTICO DA BASE DE DADOS ---
-# Utiliza diretamente o arquivo padrão embutido no repositório
+# Utiliza diretamente o arquivo padrão embutido no repositório[cite: 2]
 dict_bases = carregar_e_tratar_dados("relatorio glpi.xlsx") if os.path.exists("relatorio glpi.xlsx") else {}
 
 df_raw = dict_bases.get("Chamados", pd.DataFrame())
@@ -224,64 +225,46 @@ if target_chamados and target_chamados > 0:
 tot_humanos_fmt = f"{tot_humanos}{target_atend_str}"
 
 # ------------------------------------------------------------------
-# BOTÃO DE PRÉ-VISUALIZAÇÃO (TESTE SEM ENVIAR)
-# ------------------------------------------------------------------
-if st.sidebar.button("👁️ Pré-visualizar Notificação (Teste)", use_container_width=True):
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🔍 Pré-visualização da Mensagem:")
-    st.sidebar.markdown(f"**📅 Período de Análise:** {start_dt.strftime('%d/%m/%Y')} até {end_dt.strftime('%d/%m/%Y')}")
-    st.sidebar.markdown("---")
-    st.sidebar.markdown(
-        f"**Total Volumetria:** {tot_geral}\n\n"
-        f"**Atendimento:** {tot_humanos_fmt}\n\n"
-        f"**Alertas Zabbix:** {tot_zbx}\n\n"
-        f"**SLA de Incidentes:** {sla_taxa_str}\n\n"
-        f"**Backlog de Incidentes (>3 dias):** {criticos_inc_cnt}\n\n"
-        f"**Tempo Médio Solução (TMS):** {tms_notif_str}\n\n"
-        f"**Resolvidos em < 24h:** {pct_24h_str}"
-    )
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("**🚨 Incidentes por Prioridade:**")
-    st.sidebar.markdown(prio_notif_str if prio_notif_str else "Nenhum")
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("**🏢 Volume por Área (Incidente / Requisição):**")
-    st.sidebar.markdown(areas_notif_str if areas_notif_str else "Nenhum")
-
-# ------------------------------------------------------------------
-# BOTÕES DA LATERAL (ENVIO TEAMS)
+# CONTROLE DE SENHA E ENVIO TEAMS
 # ------------------------------------------------------------------
 st.sidebar.divider()
 st.sidebar.markdown("📢 **Integração Teams**")
+
+SENHA_TEAMS = "corrida"
+senha_digitada = st.sidebar.text_input("Senha de autorização:", type="password", key="input_senha_teams", autocomplete="off")
+
 if st.sidebar.button("🚀 Enviar Resumo no Teams", use_container_width=True):
-    com_sucesso = enviar_notificacao_teams(
-        settings.WEBHOOK_TEAMS_URL,
-        start_dt.strftime('%d/%m/%Y'), end_dt.strftime('%d/%m/%Y'),
-        tot_geral, tot_humanos_fmt, sla_taxa_str, criticos_inc_cnt, tot_zbx,
-        tms_str=tms_notif_str, pct_resolv_24h=pct_24h_str,
-        prio_str=prio_notif_str, areas_str=areas_notif_str
-    )
-    if com_sucesso:
-        st.sidebar.success("✅ Resumo enviado com sucesso no canal Gestão-GLPI!")
+    if senha_digitada == SENHA_TEAMS:
+        com_sucesso = enviar_notificacao_teams(
+            settings.WEBHOOK_TEAMS_URL,
+            start_dt.strftime('%d/%m/%Y'), end_dt.strftime('%d/%m/%Y'),
+            tot_geral, tot_humanos_fmt, sla_taxa_str, criticos_inc_cnt, tot_zbx,
+            tms_str=tms_notif_str, pct_resolv_24h=pct_24h_str,
+            prio_str=prio_notif_str, areas_str=areas_notif_str
+        )
+        if com_sucesso:
+            st.sidebar.success("✅ Resumo enviado com sucesso no canal Gestão-GLPI!")
+        else:
+            st.sidebar.error("❌ Falha ao enviar para o Teams. Verifique a URL do Webhook.")
     else:
-        st.sidebar.error("❌ Falha ao enviar para o Teams. Verifique a URL do Webhook.")
-
-st.sidebar.divider()
-st.sidebar.markdown("📥 **Exportar Relatório Consolidado**")
-df_resumo_executivos = pd.DataFrame([
-    {"Indicador / Métrica": "Período Analisado", "Valor": f"{start_dt.strftime('%d/%m/%Y')} a {end_dt.strftime('%d/%m/%Y')}"},
-    {"Indicador / Métrica": "Volumetria Total de Chamados", "Valor": tot_geral},
-    {"Indicador / Métrica": "Atendimentos Equipe (Humano)", "Valor": tot_humanos},
-    {"Indicador / Métrica": "Alertas Zabbix", "Valor": tot_zbx},
-    {"Indicador / Métrica": "SLA de Incidentes (%)", "Valor": sla_taxa_str},
-    {"Indicador / Métrica": "Backlog Crítico (> 5 Dias em Aberto)", "Valor": criticos_cnt}
-])
-
-st.sidebar.download_button(
-    label="📄 Baixar Resumo Executivo (CSV)",
-    data=df_resumo_executivos.to_csv(index=False, sep=";").encode("utf-8-sig"),
-    file_name=f"resumo_executivo_glpi_{start_dt.strftime('%d%m%Y')}_a_{end_dt.strftime('%d%m%Y')}.csv",
-    mime="text/csv"
-)
+        st.sidebar.error("❌ Acesso negado!")
+        
+        # Bloco seguro para exibir o GIF animado via HTML na barra lateral
+        caminho_gif = "erro login.gif   "  # mantemos o nome do arquivo que você colocou
+        if os.path.exists(caminho_gif):
+            with open(caminho_gif, "rb") as f:
+                data_gif = f.read()
+                encoded_gif = base64.b64encode(data_gif).decode("utf-8")
+                st.sidebar.markdown(
+                    f"""
+                    <div style="text-align: center;">
+                        <img src="data:image/gif;base64,{encoded_gif}" width="250" style="border-radius: 8px;">
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+        else:
+            st.sidebar.warning("⚠️ Arquivo do meme não encontrado.")
 
 # NAVEGAÇÃO DE MÓDULOS
 modulo = st.sidebar.radio(
