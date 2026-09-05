@@ -1,0 +1,36 @@
+name: Automatizar Relatorio GLPI
+
+on:
+  schedule:
+    # Executa a cada 2 horas (você pode ajustar a cron expression conforme preferir)
+    - cron: '0 */2 * * *'
+  workflow_dispatch: # Permite rodar manualmente pelo site do GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Copiar repositorio
+      uses: actions/checkout@v4
+
+    - name: Configurar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Instalar dependencias
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas requests openpyxl urllib3
+
+    - name: Executar script de atualizacao
+      run: |
+        python atualizar_glpi.py # Substitua pelo nome exato do seu arquivo .py
+
+    - name: Enviar alteracoes de volta para o repositorio
+      run: |
+        git config --global user.name "GitHub Actions Bot"
+        git config --global user.email "actions@github.com"
+        git add "relatorio glpi.xlsx"
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Atualizacao automatica do relatorio GLPI [skip ci]" && git push)
