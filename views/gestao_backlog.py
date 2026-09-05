@@ -75,13 +75,11 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
         if df_src.empty:
             return pd.DataFrame()
         
-        # 1. Elimina qualquer coluna com nome repetido que veio da base bruta
         df_base = df_src.loc[:, ~df_src.columns.duplicated()].copy()
         
         mapa = {}
         ja_mapeados = set()
 
-        # Mapeia dinamicamente evitando colidir nomes
         for c in df_base.columns:
             cl = str(c).lower()
             
@@ -111,17 +109,12 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
                 ja_mapeados.add('Status')
 
         df_renomeado = df_base.rename(columns=mapa)
-        
-        # 2. Garante novamente que a renomeação não gerou nenhuma duplicação
         df_renomeado = df_renomeado.loc[:, ~df_renomeado.columns.duplicated()]
         
-        # 3. Seleciona apenas as colunas mapeadas na ordem padrão
         cols_desejadas = ['ID', 'dt_abertura', 'dias_em_aberto', 'Tipo', 'Prioridade', 'Título', 'Atribuído - Técnico', 'Status']
         cols_finais = [c for c in cols_desejadas if c in df_renomeado.columns]
         
         df_out = df_renomeado[cols_finais].copy()
-        
-        # 4. Trava de segurança final para a renderização do PyArrow
         df_out = df_out.loc[:, ~df_out.columns.duplicated()]
         
         if 'dias_em_aberto' in df_out.columns:
@@ -129,11 +122,36 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
             
         return df_out
 
+    def renderizar_tabela_com_link(df_fmt):
+        if df_fmt.empty:
+            st.info("Nenhum registro encontrado.")
+            return
+
+        df_exibicao = df_fmt.copy()
+        if 'ID' in df_exibicao.columns:
+            df_exibicao['ID'] = df_exibicao['ID'].astype(str).str.replace(r'\.0$', '', regex=True)
+            url_base = "https://glpi.dominio.local/ssi/front/ticket.form.php?id="
+            df_exibicao['ID'] = url_base + df_exibicao['ID']
+            
+            mostrar_dataframe(
+                df_exibicao, 
+                height=400,
+                column_config={
+                    'ID': st.column_config.LinkColumn(
+                        "ID",
+                        help="Clique para abrir o chamado diretamente no GLPI em uma nova aba",
+                        display_text=r"id=(.*)"
+                    )
+                }
+            )
+        else:
+            mostrar_dataframe(df_exibicao, height=400)
+
     # ABA 1: Backlog Humano
     with tab_humano:
         df_humano_fmt = formatar_tabela_backlog(df_backlog_humano)
         if not df_humano_fmt.empty:
-            mostrar_dataframe(df_humano_fmt)
+            renderizar_tabela_com_link(df_humano_fmt)
         else:
             st.info("Nenhum chamado pendente no atendimento humano.")
 
@@ -141,7 +159,7 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
     with tab_zabbix:
         df_zabbix_fmt = formatar_tabela_backlog(df_backlog_zabbix)
         if not df_zabbix_fmt.empty:
-            mostrar_dataframe(df_zabbix_fmt)
+            renderizar_tabela_com_link(df_zabbix_fmt)
         else:
             st.info("Nenhum alerta pendente no Zabbix.")
 

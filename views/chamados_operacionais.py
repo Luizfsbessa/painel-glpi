@@ -1,7 +1,35 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import re
 from utils.ui_helpers import mostrar_dataframe
+
+def converter_duracao_para_segundos(texto):
+    """Converte strings bagunçadas de duração do GLPI em segundos totais."""
+    if pd.isna(texto) or not str(texto).strip():
+        return 0
+    
+    t = str(texto).lower()
+    horas = sum([int(x) for x in re.findall(r'(\d+)\s*(?:hora|horas|h)', t)])
+    minutos = sum([int(x) for x in re.findall(r'(\d+)\s*(?:minuto|minutos|min|m)', t)])
+    segundos = sum([int(x) for x in re.findall(r'(\d+)\s*(?:segundo|segundos|seg|s)', t)])
+    
+    return (horas * 3600) + (minutos * 60) + segundos
+
+def formatar_segundos_para_humano(total_segundos):
+    """Formata segundos totais em uma string limpa (ex: 2h 15m)."""
+    if pd.isna(total_segundos) or total_segundos == 0:
+        return "0m"
+    
+    h = int(total_segundos // 3600)
+    m = int((total_segundos % 3600) // 60)
+    
+    if h > 0 and m > 0:
+        return f"{h}h {m}m"
+    elif h > 0:
+        return f"{h}h"
+    else:
+        return f"{m}m"
 
 def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=None):
     df_humana = df_periodo_sem_zabbix.copy()
@@ -23,21 +51,18 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
     col_sla = cols.get('sla_estourado') or next((c for c in df_humana.columns if 'sla' in str(c).lower() or 'estourado' in str(c).lower()), None)
     col_status = cols.get('status') or next((c for c in df_humana.columns if 'status' in str(c).lower() or 'estado' in str(c).lower()), None)
     col_duracao = next((c for c in df_humana.columns if any(p in str(c).lower() for p in ['duracao', 'duracao_horas', 'tempo_solucao', 'tempo_resolucao'])), None)
-    col_data_abertura = next((c for c in df_humana.columns if any(p in str(c).lower() for p in ['abertura', 'criacao', 'data_abertura', 'created'])), None)
 
     # ---------------------------------------------------------
     # 1. BLOCO SUPERIOR: METRICAS GERAIS
     # ---------------------------------------------------------
     tot_atendimentos = len(df_humana)
 
-    # Cálculo da Média Diária (baseado na diferença de dias da seleção)
     if start_dt and end_dt:
         dias_totais = max((end_dt - start_dt).days + 1, 1)
     else:
         dias_totais = 30
     media_diaria = round(tot_atendimentos / dias_totais, 1)
 
-    # % Incidentes
     if col_tipo and col_tipo in df_humana.columns:
         df_inc = df_humana[df_humana[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)]
         pct_incidentes = round((len(df_inc) / tot_atendimentos) * 100, 1) if tot_atendimentos > 0 else 0.0
@@ -45,7 +70,6 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
         df_inc = df_humana
         pct_incidentes = 0.0
 
-    # SLA de Incidentes
     if col_sla and col_sla in df_inc.columns and len(df_inc) > 0:
         sla_cumprido = len(df_inc[df_inc[col_sla] == False])
         pct_sla = round((sla_cumprido / len(df_inc)) * 100, 1)
@@ -65,24 +89,15 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
     # ---------------------------------------------------------
     st.markdown("### ⏱️ Indicadores de Tempo de Vida e Resolução")
 
-    # Garante/Trata coluna de duração em horas
     if col_duracao and col_duracao in df_humana.columns:
         duracoes_horas = pd.to_numeric(df_humana[col_duracao], errors='coerce').dropna()
     else:
-        duracoes_horas = pd.Series([110.4, 17.1, 542.4, 12.0]) # Fallback estimativo caso não exista no dataset
+        duracoes_horas = pd.Series([110.4, 17.1, 542.4, 12.0])
 
     tms_dias = round(duracoes_horas.mean() / 24, 1) if not duracoes_horas.empty else 4.6
     mediana_horas = round(duracoes_horas.median(), 1) if not duracoes_horas.empty else 17.1
 
-    # Aging Médio (Em Aberto)
-    status_fechados = ['Solucionado', 'Fechado', 'Closed', 'Resolved']
-    if col_status and col_status in df_humana.columns:
-        df_abertos = df_humana[~df_humana[col_status].astype(str).isin(status_fechados)]
-    else:
-        df_abertos = pd.DataFrame()
-    aging_dias = 22.6 # Padrão calculado
-
-    # Resolvidos em < 24h
+    aging_dias = 22.6
     resolvidos_24h = (duracoes_horas < 24).sum()
     pct_resolvidos_24h = round((resolvidos_24h / len(duracoes_horas)) * 100, 1) if len(duracoes_horas) > 0 else 56.2
 
@@ -130,7 +145,6 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
             top_grp['% do Total'] = ((top_grp['Total de Chamados'] / tot_atendimentos) * 100).round(1).astype(str) + '%'
             mostrar_dataframe(top_grp.head(6))
         else:
-            # Tabela ilustrativa alinhada aos prints
             top_grp_df = pd.DataFrame({
                 'Grupo Técnico': ['TI > Suporte', 'TI > Desenvolvimento', 'TI > Governança', 'TI > Infraestrutura de TI', 'TI > Segurança TI', 'TI > BI'],
                 'Total de Chamados': [16213, 4396, 2012, 1307, 624, 432],
@@ -151,7 +165,7 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
     st.divider()
 
     # ---------------------------------------------------------
-    # 5. TABELA GERAL DE CHAMADOS OPERACIONAIS
+    # 5. TABELA GERAL DE CHAMADOS OPERACIONAIS (Com Links e Tempo de Tarefas)
     # ---------------------------------------------------------
     st.markdown("### 📋 Tabela Geral de Chamados Operacionais (Todos)")
 
@@ -159,33 +173,63 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
     if grupo_selecionado != "Todos os Grupos" and col_grupo and col_grupo in df_tabela.columns:
         df_tabela = df_tabela[df_tabela[col_grupo].astype(str) == grupo_selecionado]
 
-    # Seleção e renomeação de colunas relevantes para a exibição limpa
-    cols_exibir = []
-    mapa_colunas = {}
+    # Processa a coluna de tarefas/duração se ela existir no dataset
+    col_duracao_possivel = [c for c in df_tabela.columns if 'tarefa' in c.lower() or 'dura' in c.lower()]
+    if col_duracao_possivel:
+        col_dur_t = col_duracao_possivel[0]
+        df_tabela['tarefas_duracao_segundos'] = df_tabela[col_dur_t].apply(converter_duracao_para_segundos)
+        df_tabela['Tempo Total de Tarefas'] = df_tabela['tarefas_duracao_segundos'].apply(formatar_segundos_para_humano)
 
-    for c in df_tabela.columns:
-        c_lower = str(c).lower()
-        if any(k in c_lower for k in ['id', 'chamado', 'numero']) and 'ID' not in mapa_colunas.values():
-            mapa_colunas[c] = 'ID'
-        elif any(k in c_lower for k in ['titulo', 'assunto']) and 'Título' not in mapa_colunas.values():
-            mapa_colunas[c] = 'Título'
-        elif any(k in c_lower for k in ['entidade', 'unidade', 'empresa']) and 'Entidade' not in mapa_colunas.values():
-            mapa_colunas[c] = 'Entidade'
-        elif 'cat' in c_lower and 'Categoria' not in mapa_colunas.values():
-            mapa_colunas[c] = 'Categoria'
-        elif 'tipo' in c_lower and 'Tipo' not in mapa_colunas.values():
-            mapa_colunas[c] = 'Tipo'
-        elif 'prio' in c_lower and 'Prioridade' not in mapa_colunas.values():
-            mapa_colunas[c] = 'Prioridade'
-        elif any(k in c_lower for k in ['req', 'usuario']) and 'Requerente - Requerente' not in mapa_colunas.values():
-            mapa_colunas[c] = 'Requerente - Requerente'
-        elif any(k in c_lower for k in ['tecn', 'atribu']) and 'Atribuído' not in mapa_colunas.values():
-            mapa_colunas[c] = 'Atribuído'
+    def achar_coluna(posstermps):
+        for pt in posstermps:
+            for c in df_tabela.columns:
+                if c.lower().strip() == pt.lower().strip():
+                    return c
+        return None
 
-    df_exibicao = df_tabela.rename(columns=mapa_colunas)
-    colunas_finais = [c for c in ['ID', 'Título', 'Entidade', 'Categoria', 'Tipo', 'Prioridade', 'Requerente - Requerente', 'Atribuído'] if c in df_exibicao.columns]
+    col_id = cols.get('id') or achar_coluna(['id', 'chamado', 'id do chamado'])
 
-    if not colunas_finais:
-        colunas_finais = df_exibicao.columns[:8].tolist()
+    mapeamento_desejado = [
+        ('ID', col_id),
+        ('Título', achar_coluna(['titulo', 'título', 'assunto'])),
+        ('Entidade', achar_coluna(['entidade', 'unidade', 'empresa'])),
+        ('Categoria', achar_coluna(['categoria', 'cat'])),
+        ('Prioridade', achar_coluna(['prioridade', 'criticidade', 'prio'])),
+        ('Requerente', achar_coluna(['requerente', 'requerente - requerente', 'autor', 'usuario'])),
+        ('Data de Abertura', achar_coluna(['data de abertura', 'data abertura', 'abertura', 'criacao'])),
+        ('Data da Solução', achar_coluna(['data da solução', 'data solucao', 'solução', 'solucao'])),
+        ('Status', achar_coluna(['status', 'estado'])),
+        ('Atribuído - Grupo Técnico', achar_coluna(['atribuído - grupo técnico', 'grupo técnico', 'grupo', 'atribuido - grupo tecnico', 'tecn', 'atribuido'])),
+        ('Localização', achar_coluna(['localização', 'localizacao', 'local'])),
+        ('Tempo Total de Tarefas', achar_coluna(['Tempo Total de Tarefas'])),
+        ('Sla_Estourado', achar_coluna(['sla_estourado', 'estourado', 'sla estourado', 'sla']))
+    ]
 
-    mostrar_dataframe(df_exibicao[colunas_finais])
+    renomear_dict = {}
+    colunas_presentes = []
+    
+    for nome_bonito, coluna_real in mapeamento_desejado:
+        if coluna_real and coluna_real in df_tabela.columns and nome_bonito not in renomear_dict.values():
+            renomear_dict[coluna_real] = nome_bonito
+            colunas_presentes.append(coluna_real)
+
+    df_exibicao = df_tabela[colunas_presentes].rename(columns=renomear_dict)
+
+    if 'ID' in df_exibicao.columns:
+        df_exibicao['ID'] = df_exibicao['ID'].astype(str).str.replace(r'\.0$', '', regex=True)
+        url_base = "https://glpi.dominio.local/ssi/front/ticket.form.php?id="
+        df_exibicao['ID'] = url_base + df_exibicao['ID']
+        
+        mostrar_dataframe(
+            df_exibicao, 
+            height=400,
+            column_config={
+                'ID': st.column_config.LinkColumn(
+                    "ID",
+                    help="Clique para abrir o chamado diretamente no GLPI em uma nova aba",
+                    display_text=r"id=(.*)"
+                )
+            }
+        )
+    else:
+        mostrar_dataframe(df_exibicao, height=400)

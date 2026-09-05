@@ -49,6 +49,35 @@ def renderizar(*args, **kwargs):
     col_status = cols.get('status') or next((c for c in (df_problemas.columns if not df_problemas.empty else df_mudancas.columns) if any(k in str(c).lower() for k in ['status', 'estado'])), None)
     status_concluidos = ['Solucionado', 'Fechado', 'Closed', 'Resolved', 'Concluído', 'Aplicado']
 
+    # Função auxiliar interna para renderizar tabela aplicando o link correto do GLPI
+    def renderizar_com_link(df_src, url_base, label_id):
+        if df_src.empty:
+            st.info("Nenhum registro encontrado.")
+            return
+
+        df_exibicao = df_src.loc[:, ~df_src.columns.duplicated()].copy()
+        
+        # Tenta achar a coluna de ID para transformar em link
+        col_id_cand = next((c for c in df_exibicao.columns if any(k in str(c).lower() for k in ['id', 'chamado', 'numero'])), None)
+        
+        if col_id_cand:
+            df_exibicao[col_id_cand] = df_exibicao[col_id_cand].astype(str).str.replace(r'\.0$', '', regex=True)
+            df_exibicao[col_id_cand] = url_base + df_exibicao[col_id_cand]
+            
+            mostrar_dataframe(
+                df_exibicao, 
+                height=400,
+                column_config={
+                    col_id_cand: st.column_config.LinkColumn(
+                        label_id,
+                        help="Clique para abrir diretamente no GLPI em uma nova aba",
+                        display_text=r"id=(.*)"
+                    )
+                }
+            )
+        else:
+            mostrar_dataframe(df_exibicao, height=400)
+
     # 3. CRIAÇÃO DAS ABAS
     tab_problemas, tab_mudancas = st.tabs([
         "⚠️ Painel de Problemas", 
@@ -72,10 +101,8 @@ def renderizar(*args, **kwargs):
 
         st.divider()
 
-        if not df_problemas.empty:
-            mostrar_dataframe(df_problemas.loc[:, ~df_problemas.columns.duplicated()])
-        else:
-            st.info("Nenhum problema registrado.")
+        url_problema = "https://glpi.dominio.local/ssi/front/problem.form.php?id="
+        renderizar_com_link(df_problemas, url_problema, "ID do Problema")
 
     # --- ABA 2: MUDANÇAS ---
     with tab_mudancas:
@@ -94,10 +121,8 @@ def renderizar(*args, **kwargs):
 
         st.divider()
 
-        if not df_mudancas.empty:
-            mostrar_dataframe(df_mudancas.loc[:, ~df_mudancas.columns.duplicated()])
-        else:
-            st.info("Nenhuma mudança registrada.")
+        url_mudanca = "https://glpi.dominio.local/ssi/front/change.form.php?id="
+        renderizar_com_link(df_mudancas, url_mudanca, "ID da Mudança")
 
 def exibir(*args, **kwargs):
     renderizar(*args, **kwargs)

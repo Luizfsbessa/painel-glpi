@@ -16,6 +16,9 @@ Este painel foi desenvolvido em **Streamlit** para centralizar a gestão e o mon
 - **Navegação Modular**: Seleção rápida de relatórios e painéis especializados divididos por abas e visualizações.
 - **Integração com Microsoft Teams**: Envio automatizado de resumos operacionais via webhook com restrição por senha de autorização e feedback visual animado.
 - **Processamento de Dados**: Leitura e tratamento dinâmico de planilhas e bases de dados.
+- **Links Diretos para o GLPI**: Transformação das colunas de ID em links interativos (`st.column_config.LinkColumn`), abrindo os registros diretamente em novas abas no sistema GLPI.
+- **Rotas de URLs Dinâmicas por Módulo**
+- **Tratamento de Dados Robusto**: Validação automática contra duplicação de colunas e mapeamento seguro utilizando Pandas e PyArrow no Streamlit.
 
 ---
 
