@@ -30,6 +30,18 @@ MAPA_PRIORIDADE = {
     6: "Urgente"
 }
 
+# Regra de SLA em horas por prioridade solicitada
+LIMITES_SLA_HORAS = {
+    "Muito baixa": 24,    # Fallback caso não especificado
+    "Baixa": 10,
+    "Média": 6,
+    "Media": 6,
+    "Alta": 4,
+    "Muito alta": 2,
+    "Muito Alta": 2,
+    "Urgente": 2
+}
+
 def obter_nome_relacional(headers, endpoint, item_id):
     if not item_id or item_id == 0:
         return None
@@ -102,6 +114,30 @@ def buscar_atores_ticket(headers, ticket_id):
 
     return requerente, tecnico, grupo_req, grupo_tec
 
+def calcular_sla_excedido(data_abertura, data_solucao, prioridade):
+    """
+    Calcula se o SLA foi excedido com base nas horas limite da criticidade:
+    - Muito alta: 2h
+    - Alta: 4h
+    - Média: 6h
+    - Baixa: 10h
+    """
+    if not data_abertura:
+        return "Não"
+    
+    try:
+        dt_ini = pd.to_datetime(data_abertura)
+        dt_fim = pd.to_datetime(data_solucao) if pd.notnull(data_solucao) else datetime.now()
+        
+        horas_decorridas = (dt_fim - dt_ini).total_seconds() / 3600.0
+        limite_horas = LIMITES_SLA_HORAS.get(str(prioridade).strip(), 24)
+        
+        if horas_decorridas > limite_horas:
+            return "Sim"
+    except:
+        pass
+    return "Não"
+
 def atualizar():
     if not os.path.exists(EXCEL_PATH):
         print("Arquivo Excel não encontrado.")
@@ -156,6 +192,9 @@ def atualizar():
     col_id = 'ID'
     col_status = 'Status'
     col_sol = 'Data da solução'
+    col_prio = 'Prioridade'
+    col_sla = 'Tempo para resolver excedido'
+    col_abertura = 'Data de abertura'
 
     if col_id not in df.columns:
         print("Coluna 'ID' não encontrada na aba Chamados.")
@@ -168,33 +207,44 @@ def atualizar():
             tid = item.get("id")
             st_num = item.get("status")
             st_texto = MAPA_STATUS.get(int(st_num), str(st_num)) if st_num is not None else "Novo"
+            prio_num = item.get("priority", 2)
+            prio_texto = MAPA_PRIORIDADE.get(int(prio_num), "Baixa")
             
             if tid is not None:
                 api_dict[str(tid).strip()] = {
                     "id": tid,
                     "status": st_texto,
-                    "solvedate": item.get("solvedate")
+                    "solvedate": item.get("solvedate"),
+                    "priority": prio_texto,
+                    "date": item.get("date")
                 }
 
     df['id_limpo'] = df[col_id].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     ids_existentes_planilha = set(df['id_limpo'])
 
-    for col in [col_status, col_sol]:
+    for col in [col_status, col_sol, col_sla]:
         if col in df.columns:
             df[col] = df[col].astype(object)
 
     atualizados = 0
-    # 1. Atualiza chamados existentes
+    # 1. Atualiza chamados existentes (inclusive recalculando o SLA se necessário)
     for idx, row in df.iterrows():
         tid_str = row['id_limpo']
         if tid_str in api_dict:
             novo_status = api_dict[tid_str]["status"]
             nova_sol = api_dict[tid_str]["solvedate"]
+            prio_atual = row[col_prio] if col_prio in df.columns and pd.notnull(row[col_prio]) else api_dict[tid_str]["priority"]
+            dt_abertura = row[col_abertura] if col_abertura in df.columns else api_dict[tid_str]["date"]
             
             if col_status in df.columns and novo_status is not None:
                 df.at[idx, col_status] = str(novo_status)
             if col_sol in df.columns and nova_sol is not None:
                 df.at[idx, col_sol] = nova_sol
+            
+            # Recalcula o SLA baseado na regra nova
+            if col_sla in df.columns:
+                df.at[idx, col_sla] = calcular_sla_excedido(dt_abertura, nova_sol, prio_atual)
+                
             atualizados += 1
 
     df.drop(columns=['id_limpo'], inplace=True)
@@ -221,17 +271,11 @@ def atualizar():
 
                 requerente_nome, tecnico_nome, grupo_req, grupo_tec = buscar_atores_ticket(headers, tid)
 
-                time_to_resolve = t_info.get("time_to_resolve")
                 solvedate = t_info.get("solvedate")
+                dt_abertura = t_info.get("date")
                 
-                sla_excedido = "Não"
-                if time_to_resolve and not solvedate:
-                    try:
-                        dt_limit = datetime.strptime(time_to_resolve, "%Y-%m-%d %H:%M:%S")
-                        if datetime.now() > dt_limit:
-                            sla_excedido = "Sim"
-                    except:
-                        pass
+                # Aplica a nova regra de SLA por criticidade
+                sla_excedido = calcular_sla_excedido(dt_abertura, solvedate, prio_texto)
 
                 novo_row = {
                     col_id: t_info.get("id"),
@@ -242,7 +286,7 @@ def atualizar():
                     'Prioridade': prio_texto,
                     'Requerente - Requerente': requerente_nome,
                     'Atribuído - Técnico': tecnico_nome,
-                    'Data de abertura': t_info.get("date"),
+                    'Data de abertura': dt_abertura,
                     col_status: st_texto,
                     col_sol: solvedate,
                     'Atribuído - Grupo técnico': grupo_tec,
@@ -279,7 +323,7 @@ def atualizar():
     with pd.ExcelWriter(EXCEL_PATH, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
         df.to_excel(writer, sheet_name=SHEET_NAME, index=False)
 
-    print(f"Sucesso! {atualizados} chamados atualizados e datas padronizadas na aba '{SHEET_NAME}'.")
+    print(f"Sucesso! {atualizados} chamados atualizados, SLA recalculado por criticidade e datas padronizadas na aba '{SHEET_NAME}'.")
 
 if __name__ == "__main__":
     atualizar()
