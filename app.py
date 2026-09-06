@@ -34,7 +34,7 @@ st.title("📊 Painel Gerencial & Relatórios GLPI")
 st.caption("Plataforma de inteligência e acompanhamento de chamados (Frescatto)")
 
 # --- CARREGAMENTO AUTOMÁTICO DA BASE DE DADOS ---
-# Utiliza diretamente o arquivo padrão embutido no repositório[cite: 2]
+# Utiliza diretamente o arquivo padrão embutido no repositório
 dict_bases = carregar_e_tratar_dados("relatorio glpi.xlsx") if os.path.exists("relatorio glpi.xlsx") else {}
 
 df_raw = dict_bases.get("Chamados", pd.DataFrame())
@@ -44,6 +44,11 @@ df_mudancas = dict_bases.get("Mudanças", pd.DataFrame())
 if df_raw.empty:
     st.error(f"⚠️ O arquivo de dados padrão não foi encontrado ou está vazio no caminho: `relatorio glpi.xlsx`. Verifique se ele foi enviado para o repositório.")
     st.stop()
+
+# Ordena a base principal crescentemente por ID
+if 'ID' in df_raw.columns:
+    df_raw['ID'] = pd.to_numeric(df_raw['ID'], errors='coerce')
+    df_raw = df_raw.sort_values(by='ID', ascending=True).reset_index(drop=True)
 
 cols = {
     'tec': buscar_coluna(df_raw, ['Atribuído - Técnico', 'Técnico', 'Tecnico']),
@@ -250,7 +255,7 @@ if st.sidebar.button("🚀 Enviar Resumo no Teams", use_container_width=True):
         st.sidebar.error("❌ Acesso negado!")
         
         # Bloco seguro para exibir o GIF animado via HTML na barra lateral
-        caminho_gif = "erro login.gif   "  # mantemos o nome do arquivo que você colocou
+        caminho_gif = "erro login.gif"
         if os.path.exists(caminho_gif):
             with open(caminho_gif, "rb") as f:
                 data_gif = f.read()

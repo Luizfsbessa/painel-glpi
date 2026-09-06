@@ -320,10 +320,16 @@ def atualizar():
         if c_data in df.columns:
             df[c_data] = pd.to_datetime(df[c_data], errors='coerce')
 
+    # Ordena o DataFrame pelo ID em ordem crescente antes de salvar
+    if col_id in df.columns:
+        df[col_id] = pd.to_numeric(df[col_id], errors='coerce')
+        df.sort_values(by=col_id, ascending=True, inplace=True)
+        df.reset_index(drop=True, inplace=True)
+
     with pd.ExcelWriter(EXCEL_PATH, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
         df.to_excel(writer, sheet_name=SHEET_NAME, index=False)
 
-    print(f"Sucesso! {atualizados} chamados atualizados, SLA recalculado por criticidade e datas padronizadas na aba '{SHEET_NAME}'.")
+    print(f"Sucesso! {atualizados} chamados atualizados, SLA recalculado por criticidade, ordenado por ID e datas padronizadas na aba '{SHEET_NAME}'.")
 
 if __name__ == "__main__":
     atualizar()
