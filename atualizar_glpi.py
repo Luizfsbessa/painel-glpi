@@ -32,7 +32,7 @@ MAPA_PRIORIDADE = {
 
 # Regra de SLA em horas por prioridade solicitada
 LIMITES_SLA_HORAS = {
-    "Muito baixa": 24,    # Fallback caso não especificado
+    "Muito baixa": 24,
     "Baixa": 10,
     "Média": 6,
     "Media": 6,
@@ -114,18 +114,34 @@ def buscar_atores_ticket(headers, ticket_id):
 
     return requerente, tecnico, grupo_req, grupo_tec
 
-def calcular_sla_excedido(sla_status):
+def calcular_sla_excedido(ticket):
     """
-    Usa diretamente o status de SLA retornado pelas estatísticas do GLPI.
+    Avalia se o SLA foi excedido comparando o time_to_resolve (prazo limite):
+    - Se resolvido: compara a data de solução com o limite.
+    - Se aberto/pendente: compara a data/hora atual com o limite.
     """
-    if not sla_status:
-        return "Não"
+    ttr = ticket.get("time_to_resolve")
+    solvedate = ticket.get("solvedate") or ticket.get("date_solved")
     
-    # Se o GLPI retornar que o SLA foi excedido (ex: valor indicativo ou booleano)
-    # Ajuste a verificação conforme o dado bruto que a API do GLPI entrega
-    if str(sla_status).strip().lower() in ["1", "sim", "yes", "exceeded", "true"]:
-        return "Sim"
+    if not ttr:
+        return "Não"
         
+    try:
+        ttr_dt = datetime.strptime(ttr, "%Y-%m-%d %H:%M:%S")
+    except:
+        return "Não"
+        
+    if solvedate:
+        try:
+            sol_dt = datetime.strptime(solvedate, "%Y-%m-%d %H:%M:%S")
+            if sol_dt > ttr_dt:
+                return "Sim"
+        except:
+            pass
+    else:
+        if datetime.now() > ttr_dt:
+            return "Sim"
+            
     return "Não"
 
 def atualizar():
@@ -206,7 +222,8 @@ def atualizar():
                     "status": st_texto,
                     "solvedate": item.get("solvedate"),
                     "priority": prio_texto,
-                    "date": item.get("date")
+                    "date": item.get("date"),
+                    "time_to_resolve": item.get("time_to_resolve")
                 }
 
     df['id_limpo'] = df[col_id].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
@@ -217,7 +234,7 @@ def atualizar():
             df[col] = df[col].astype(object)
 
     atualizados = 0
-    # 1. Atualiza chamados existentes (inclusive recalculando o SLA se necessário)
+    # 1. Atualiza chamados existentes (recalculando o SLA corretamente)
     for idx, row in df.iterrows():
         tid_str = row['id_limpo']
         if tid_str in api_dict:
@@ -231,9 +248,9 @@ def atualizar():
             if col_sol in df.columns and nova_sol is not None:
                 df.at[idx, col_sol] = nova_sol
             
-            # Recalcula o SLA baseado na regra nova
+            # Recalcula o SLA utilizando o dicionário completo do ticket
             if col_sla in df.columns:
-                df.at[idx, col_sla] = calcular_sla_excedido(api_dict[tid_str].get("sla_excedido"))
+                df.at[idx, col_sla] = calcular_sla_excedido(api_dict[tid_str])
                 
             atualizados += 1
 
@@ -264,8 +281,12 @@ def atualizar():
                 solvedate = t_info.get("solvedate")
                 dt_abertura = t_info.get("date")
                 
-                # Aplica a nova regra de SLA por criticidade
-                sla_excedido = calcular_sla_excedido(dt_abertura, solvedate, prio_texto)
+                ticket_dict = {
+                    "time_to_resolve": t_info.get("time_to_resolve"),
+                    "solvedate": solvedate,
+                    "date": dt_abertura
+                }
+                sla_excedido = calcular_sla_excedido(ticket_dict)
 
                 novo_row = {
                     col_id: t_info.get("id"),
@@ -304,13 +325,11 @@ def atualizar():
     if col_status in df.columns:
         df[col_status] = df[col_status].fillna("Desconhecido").astype(str)
 
-    # Padronização final de todas as colunas de data para datetime real
     colunas_data = ['Data de abertura', 'Última atualização', 'Data da solução']
     for c_data in colunas_data:
         if c_data in df.columns:
             df[c_data] = pd.to_datetime(df[c_data], errors='coerce')
 
-    # Ordena o DataFrame pelo ID em ordem crescente antes de salvar
     if col_id in df.columns:
         df[col_id] = pd.to_numeric(df[col_id], errors='coerce')
         df.sort_values(by=col_id, ascending=True, inplace=True)
@@ -319,7 +338,7 @@ def atualizar():
     with pd.ExcelWriter(EXCEL_PATH, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
         df.to_excel(writer, sheet_name=SHEET_NAME, index=False)
 
-    print(f"Sucesso! {atualizados} chamados atualizados, SLA recalculado por criticidade, ordenado por ID e datas padronizadas na aba '{SHEET_NAME}'.")
+    print(f"Sucesso! {atualizados} chamados atualizados, SLA recalculado, ordenado por ID e datas padronizadas na aba '{SHEET_NAME}'.")
 
 if __name__ == "__main__":
     atualizar()
