@@ -114,28 +114,18 @@ def buscar_atores_ticket(headers, ticket_id):
 
     return requerente, tecnico, grupo_req, grupo_tec
 
-def calcular_sla_excedido(data_abertura, data_solucao, prioridade):
+def calcular_sla_excedido(sla_status):
     """
-    Calcula se o SLA foi excedido com base nas horas limite da criticidade:
-    - Muito alta: 2h
-    - Alta: 4h
-    - Média: 6h
-    - Baixa: 10h
+    Usa diretamente o status de SLA retornado pelas estatísticas do GLPI.
     """
-    if not data_abertura:
+    if not sla_status:
         return "Não"
     
-    try:
-        dt_ini = pd.to_datetime(data_abertura)
-        dt_fim = pd.to_datetime(data_solucao) if pd.notnull(data_solucao) else datetime.now()
+    # Se o GLPI retornar que o SLA foi excedido (ex: valor indicativo ou booleano)
+    # Ajuste a verificação conforme o dado bruto que a API do GLPI entrega
+    if str(sla_status).strip().lower() in ["1", "sim", "yes", "exceeded", "true"]:
+        return "Sim"
         
-        horas_decorridas = (dt_fim - dt_ini).total_seconds() / 3600.0
-        limite_horas = LIMITES_SLA_HORAS.get(str(prioridade).strip(), 24)
-        
-        if horas_decorridas > limite_horas:
-            return "Sim"
-    except:
-        pass
     return "Não"
 
 def atualizar():
