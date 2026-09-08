@@ -233,7 +233,7 @@ def atualizar():
             
             # Recalcula o SLA baseado na regra nova
             if col_sla in df.columns:
-                df.at[idx, col_sla] = calcular_sla_excedido(dt_abertura, nova_sol, prio_atual)
+                df.at[idx, col_sla] = calcular_sla_excedido(ticket.get("sla_excedido"))
                 
             atualizados += 1
 
