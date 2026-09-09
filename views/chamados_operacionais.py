@@ -110,16 +110,15 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
     st.divider()
 
     # ---------------------------------------------------------
-    # 2.5. FILTRAGEM GLOBAL POR GRUPO TÉCNICO (Aplica-se aos Top 10 e Tabela Geral)
+    # 2.5. FILTRAGEM GLOBAL POR GRUPO TÉCNICO
     # ---------------------------------------------------------
     st.markdown("### 🔍 Filtrar Dados por Grupo Técnico")
-    st.write("Selecione um Grupo Técnico para filtrar as categorias, os requerentes e a tabela geral abaixo:")
     
     opcoes_grupo = ["Todos os Grupos"]
     if col_grupo and col_grupo in df_humana.columns:
         opcoes_grupo += sorted(df_humana[col_grupo].dropna().astype(str).unique().tolist())
         
-    grupo_selecionado = st.selectbox("", opcoes_grupo, key="filtro_grupo_operacionais")
+    grupo_selecionado = st.selectbox("Selecione um Grupo Técnico:", opcoes_grupo, key="filtro_grupo_operacionais")
 
     df_filtrado = df_humana.copy()
     if grupo_selecionado != "Todos os Grupos" and col_grupo and col_grupo in df_filtrado.columns:
@@ -129,28 +128,76 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
 
     st.divider()
 
+    # Inicializa estados de clique para os Top 10 se não existirem
+    if 'categoria_clicada' not in st.session_state:
+        st.session_state.categoria_clicada = "Todas"
+    if 'requerente_clicado' not in st.session_state:
+        st.session_state.requerente_clicado = "Todos"
+
     # ---------------------------------------------------------
-    # 3. TOP 10 CATEGORIAS & TOP 10 REQUERENTES (Filtrados)
+    # 3. TOP 10 CATEGORIAS & TOP 10 REQUERENTES (Com Interatividade de Clique)
     # ---------------------------------------------------------
     col_l1, col_r1 = st.columns(2)
 
     with col_l1:
         st.markdown("### 🏷️ Top 10 Categorias Mais Demandadas")
+        st.caption("💡 Clique em uma linha da tabela abaixo para filtrar os chamados.")
         if col_cat and col_cat in df_filtrado.columns:
             top_cat = df_filtrado[col_cat].value_counts().head(10).reset_index()
             top_cat.columns = ['Categoria', 'Volume']
             denom_cat = tot_atendimentos_filtrado if tot_atendimentos_filtrado > 0 else 1
             top_cat['% do Total'] = ((top_cat['Volume'] / denom_cat) * 100).round(1).astype(str) + '%'
-            mostrar_dataframe(top_cat)
+            
+            # Exibe com seleção habilitada por linha
+            evento_cat = st.dataframe(
+                top_cat,
+                use_container_width=True,
+                hide_index=True,
+                selection_mode="single-row",
+                on_select="rerun",
+                key="tabela_top_categorias"
+            )
+            
+            # Captura o clique na linha
+            if evento_cat and evento_cat.selection.rows:
+                linha_idx = evento_cat.selection.rows[0]
+                st.session_state.categoria_clicada = top_cat.iloc[linha_idx]['Categoria']
+            
+            if st.session_state.categoria_clicada != "Todas":
+                st.info(filtr_txt := f"Filtrando pela Categoria: **{st.session_state.categoria_clicada}**")
+                if st.button("Limpar Filtro de Categoria", key="btn_limpa_cat"):
+                    st.session_state.categoria_clicada = "Todas"
+                    st.rerun()
 
     with col_r1:
         st.markdown("### 👥 Top 10 Requerentes com Maior Volume")
+        st.caption("💡 Clique em uma linha da tabela abaixo para filtrar os chamados.")
         if col_req and col_req in df_filtrado.columns:
             top_req = df_filtrado[col_req].value_counts().head(10).reset_index()
             top_req.columns = ['Requerente', 'Volume de Chamados']
             denom_req = tot_atendimentos_filtrado if tot_atendimentos_filtrado > 0 else 1
             top_req['% do Total'] = ((top_req['Volume de Chamados'] / denom_req) * 100).round(1).astype(str) + '%'
-            mostrar_dataframe(top_req)
+            
+            # Exibe com seleção habilitada por linha
+            evento_req = st.dataframe(
+                top_req,
+                use_container_width=True,
+                hide_index=True,
+                selection_mode="single-row",
+                on_select="rerun",
+                key="tabela_top_requerentes"
+            )
+            
+            # Captura o clique na linha
+            if evento_req and evento_req.selection.rows:
+                linha_idx_req = evento_req.selection.rows[0]
+                st.session_state.requerente_clicado = top_req.iloc[linha_idx_req]['Requerente']
+            
+            if st.session_state.requerente_clicado != "Todos":
+                st.info(f"Filtrando pelo Requerente: **{st.session_state.requerente_clicado}**")
+                if st.button("Limpar Filtro de Requerente", key="btn_limpa_req"):
+                    st.session_state.requerente_clicado = "Todos"
+                    st.rerun()
 
     st.divider()
 
@@ -174,11 +221,19 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
     st.divider()
 
     # ---------------------------------------------------------
-    # 5. TABELA GERAL DE CHAMADOS OPERACIONAIS (Com Links e Tempo de Tarefas)
+    # 5. TABELA GERAL DE CHAMADOS OPERACIONAIS (Com Filtros Aplicados)
     # ---------------------------------------------------------
-    st.markdown("### 📋 Tabela Geral de Chamados Operacionais (Todos)")
+    st.markdown("### 📋 Tabela Geral de Chamados Operacionais")
 
     df_tabela = df_filtrado.copy()
+
+    # Aplica o filtro de Categoria clicada se houver
+    if st.session_state.categoria_clicada != "Todas" and col_cat and col_cat in df_tabela.columns:
+        df_tabela = df_tabela[df_tabela[col_cat].astype(str) == st.session_state.categoria_clicada]
+
+    # Aplica o filtro de Requerente clicado se houver
+    if st.session_state.requerente_clicado != "Todos" and col_req and col_req in df_tabela.columns:
+        df_tabela = df_tabela[df_tabela[col_req].astype(str) == st.session_state.requerente_clicado]
 
     # Processa a coluna de tarefas/duração se ela existir no dataset
     col_duracao_possivel = [c for c in df_tabela.columns if 'tarefa' in c.lower() or 'dura' in c.lower()]
