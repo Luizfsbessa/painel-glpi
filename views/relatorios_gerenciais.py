@@ -44,13 +44,14 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
 
     # Garante o uso da base completa original para o YoY
     if df_completo is not None and not df_completo.empty:
-        df_base_yoy = df_completo.copy()
-    else:
+        df_base_yoy = None
+    for k, v in st.session_state.items():
+        if isinstance(v, pd.DataFrame) and len(v) > len(df_ger):
+            df_base_yoy = v.copy()
+            break
+            
+    if df_base_yoy is None or df_base_yoy.empty:
         df_base_yoy = df_ger.copy()
-
-    if 'dt_abertura' in df_base_yoy.columns and 'AnoMes' not in df_base_yoy.columns:
-        df_base_yoy['dt_abertura'] = pd.to_datetime(df_base_yoy['dt_abertura'], errors='coerce')
-        df_base_yoy['AnoMes'] = df_base_yoy['dt_abertura'].dt.to_period('M')
 
     # ---------------------------------------------------------
     # 1. TABELA DE TARGETS CUMULATIVOS M/M COM COMPLEMENTOS DE VARIAÇÃO
