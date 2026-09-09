@@ -42,8 +42,20 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         st.warning("Nenhum mês válido encontrado para os registros.")
         return
 
-    # Preparar base global para o cálculo do YoY (independentemente do filtro de período da tela)
-    df_base_yoy = df_completo.copy() if df_completo is not None and not df_completo.empty else df_ger.copy()
+    # Tenta resgatar a base completa global via argumento ou session_state para o YoY funcionar independentemente do filtro da tela
+    df_base_yoy = None
+    if df_completo is not None and not df_completo.empty:
+        df_base_yoy = df_completo.copy()
+    else:
+        for key in st.session_state:
+            val = st.session_state[key]
+            if isinstance(val, pd.DataFrame) and len(val) > len(df_ger):
+                df_base_yoy = val.copy()
+                break
+    
+    if df_base_yoy is None or df_base_yoy.empty:
+        df_base_yoy = df_ger.copy()
+
     if 'dt_abertura' in df_base_yoy.columns and 'AnoMes' not in df_base_yoy.columns:
         df_base_yoy['dt_abertura'] = pd.to_datetime(df_base_yoy['dt_abertura'], errors='coerce')
         df_base_yoy['AnoMes'] = df_base_yoy['dt_abertura'].dt.to_period('M')
@@ -76,7 +88,7 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         
         tgt_ch, tgt_inc, tgt_sla = TARGET_MENSAL_CHAMADOS * i, TARGET_MENSAL_INCIDENTES * i, TARGET_MENSAL_SLA * i
 
-        # Cálculo YoY utilizando a base completa para buscar o mesmo mês do ano anterior
+        # Cálculo YoY utilizando a base completa global para buscar o mesmo mês do ano anterior
         m_yoy = m - 12
         df_yoy = df_base_yoy[df_base_yoy['AnoMes'] == m_yoy] if 'AnoMes' in df_base_yoy.columns else pd.DataFrame()
         ch_yoy = len(df_yoy)
