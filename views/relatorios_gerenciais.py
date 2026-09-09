@@ -26,13 +26,14 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
     col_sla = cols.get('sla_estourado') or next((c for c in df_ger.columns if 'sla' in str(c).lower() or 'estourado' in str(c).lower()), None)
     col_abertura = next((c for c in df_ger.columns if any(p in str(c).lower() for p in ['abertura', 'criacao', 'data_abertura', 'created'])), 'dt_abertura')
 
-    # Garantir coluna AnoMes
-    if 'dt_abertura' in df_ger.columns:
+    # Garantir coluna AnoMes no df_ger
+    if 'dt_abertura' in df_ger.columns and 'AnoMes' not in df_ger.columns:
         df_ger['AnoMes'] = df_ger['dt_abertura'].dt.to_period('M')
-    elif col_abertura in df_ger.columns:
+    elif col_abertura in df_ger.columns and 'AnoMes' not in df_ger.columns:
         df_ger['dt_abertura'] = pd.to_datetime(df_ger[col_abertura], errors='coerce')
         df_ger['AnoMes'] = df_ger['dt_abertura'].dt.to_period('M')
-    else:
+
+    if 'AnoMes' not in df_ger.columns:
         st.error("Coluna de data de abertura não encontrada para compilar o relatório gerencial.")
         return
 
@@ -41,10 +42,11 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         st.warning("Nenhum mês válido encontrado para os registros.")
         return
 
-    # Usar df_completo (ou df_ger caso df_completo não venha preenchido) para buscar histórico YoY se necessário
-    df_historico_base = df_completo.copy() if df_completo is not None and not df_completo.empty else df_ger.copy()
-    if 'dt_abertura' in df_historico_base.columns and 'AnoMes' not in df_historico_base.columns:
-        df_historico_base['AnoMes'] = df_historico_base['dt_abertura'].dt.to_period('M')
+    # Preparar base global para o cálculo do YoY (independentemente do filtro de período da tela)
+    df_base_yoy = df_completo.copy() if df_completo is not None and not df_completo.empty else df_ger.copy()
+    if 'dt_abertura' in df_base_yoy.columns and 'AnoMes' not in df_base_yoy.columns:
+        df_base_yoy['dt_abertura'] = pd.to_datetime(df_base_yoy['dt_abertura'], errors='coerce')
+        df_base_yoy['AnoMes'] = df_base_yoy['dt_abertura'].dt.to_period('M')
 
     # ---------------------------------------------------------
     # 1. TABELA DE TARGETS CUMULATIVOS M/M COM COMPLEMENTOS DE VARIAÇÃO
@@ -74,15 +76,16 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         
         tgt_ch, tgt_inc, tgt_sla = TARGET_MENSAL_CHAMADOS * i, TARGET_MENSAL_INCIDENTES * i, TARGET_MENSAL_SLA * i
 
-        # Cálculo YoY (mesmo mês do ano anterior)
+        # Cálculo YoY utilizando a base completa para buscar o mesmo mês do ano anterior
         m_yoy = m - 12
-        df_yoy = df_historico_base[df_historico_base['AnoMes'] == m_yoy] if 'AnoMes' in df_historico_base.columns else pd.DataFrame()
+        df_yoy = df_base_yoy[df_base_yoy['AnoMes'] == m_yoy] if 'AnoMes' in df_base_yoy.columns else pd.DataFrame()
         ch_yoy = len(df_yoy)
         
         if not df_yoy.empty and col_tipo and col_tipo in df_yoy.columns:
             mask_inc_yoy = df_yoy[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)
         else:
-            mask_inc_yoy = pd.Series(True, index=df_yoy.index)
+            mask_inc_yoy = pd.Series(True, index=df_yoy.index) if not df_yoy.empty else pd.Series(dtype=bool)
+            
         inc_yoy = mask_inc_yoy.sum() if not df_yoy.empty else 0
         
         if not df_yoy.empty and col_sla and col_sla in df_yoy.columns:
@@ -90,7 +93,7 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         else:
             sla_yoy = 0
 
-        # Se houver mês anterior no próprio período, calcula MoM
+        # Cálculo MoM baseado no mês anterior dentro do próprio período filtrado
         if i > 1:
             m_anterior = meses_periodo[i - 2]
             df_ant = df_ger[df_ger['AnoMes'] == m_anterior]
@@ -104,12 +107,11 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         else:
             mom_ch, mom_inc, mom_sla = "-", "-", "-"
 
-        # Variação YoY formatada
+        # Variações YoY e Desvio contra o Target
         yoy_ch = f"{((ch_m - ch_yoy) / ch_yoy * 100):+.1f}%" if ch_yoy > 0 else "N/A"
         yoy_inc = f"{((inc_m - inc_yoy) / inc_yoy * 100):+.1f}%" if inc_yoy > 0 else "N/A"
         yoy_sla = f"{((sla_m - sla_yoy) / sla_yoy * 100):+.1f}%" if sla_yoy > 0 else "N/A"
 
-        # Variação do Mês contra o Target Mensal Individual
         desv_mensal_ch = f"{((ch_m - TARGET_MENSAL_CHAMADOS) / TARGET_MENSAL_CHAMADOS * 100):+.1f}%"
         desv_mensal_inc = f"{((inc_m - TARGET_MENSAL_INCIDENTES) / TARGET_MENSAL_INCIDENTES * 100):+.1f}%"
         desv_mensal_sla = f"{((sla_m - TARGET_MENSAL_SLA) / TARGET_MENSAL_SLA * 100):+.1f}%"
