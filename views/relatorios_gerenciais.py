@@ -41,8 +41,13 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         st.warning("Nenhum mês válido encontrado para os registros.")
         return
 
+    # Usar df_completo (ou df_ger caso df_completo não venha preenchido) para buscar histórico YoY se necessário
+    df_historico_base = df_completo.copy() if df_completo is not None and not df_completo.empty else df_ger.copy()
+    if 'dt_abertura' in df_historico_base.columns and 'AnoMes' not in df_historico_base.columns:
+        df_historico_base['AnoMes'] = df_historico_base['dt_abertura'].dt.to_period('M')
+
     # ---------------------------------------------------------
-    # 1. TABELA DE TARGETS CUMULATIVOS M/M
+    # 1. TABELA DE TARGETS CUMULATIVOS M/M COM COMPLEMENTOS DE VARIAÇÃO
     # ---------------------------------------------------------
     dados_mm = []
     acc_ch = acc_inc = acc_sla = 0
@@ -69,24 +74,75 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         
         tgt_ch, tgt_inc, tgt_sla = TARGET_MENSAL_CHAMADOS * i, TARGET_MENSAL_INCIDENTES * i, TARGET_MENSAL_SLA * i
 
+        # Cálculo YoY (mesmo mês do ano anterior)
+        m_yoy = m - 12
+        df_yoy = df_historico_base[df_historico_base['AnoMes'] == m_yoy] if 'AnoMes' in df_historico_base.columns else pd.DataFrame()
+        ch_yoy = len(df_yoy)
+        
+        if not df_yoy.empty and col_tipo and col_tipo in df_yoy.columns:
+            mask_inc_yoy = df_yoy[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)
+        else:
+            mask_inc_yoy = pd.Series(True, index=df_yoy.index)
+        inc_yoy = mask_inc_yoy.sum() if not df_yoy.empty else 0
+        
+        if not df_yoy.empty and col_sla and col_sla in df_yoy.columns:
+            sla_yoy = df_yoy[mask_inc_yoy & (df_yoy[col_sla] == True)].shape[0]
+        else:
+            sla_yoy = 0
+
+        # Se houver mês anterior no próprio período, calcula MoM
+        if i > 1:
+            m_anterior = meses_periodo[i - 2]
+            df_ant = df_ger[df_ger['AnoMes'] == m_anterior]
+            ch_ant = len(df_ant)
+            inc_ant = df_ant[df_ant[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)].shape[0] if (col_tipo and col_tipo in df_ant.columns) else len(df_ant)
+            sla_ant = df_ant[(df_ant[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)) & (df_ant[col_sla] == True)].shape[0] if (col_tipo and col_tipo in df_ant.columns and col_sla and col_sla in df_ant.columns) else 0
+            
+            mom_ch = f"{((ch_m - ch_ant) / ch_ant * 100):+.1f}%" if ch_ant > 0 else "0.0%"
+            mom_inc = f"{((inc_m - inc_ant) / inc_ant * 100):+.1f}%" if inc_ant > 0 else "0.0%"
+            mom_sla = f"{((sla_m - sla_ant) / sla_ant * 100):+.1f}%" if sla_ant > 0 else "0.0%"
+        else:
+            mom_ch, mom_inc, mom_sla = "-", "-", "-"
+
+        # Variação YoY formatada
+        yoy_ch = f"{((ch_m - ch_yoy) / ch_yoy * 100):+.1f}%" if ch_yoy > 0 else "N/A"
+        yoy_inc = f"{((inc_m - inc_yoy) / inc_yoy * 100):+.1f}%" if inc_yoy > 0 else "N/A"
+        yoy_sla = f"{((sla_m - sla_yoy) / sla_yoy * 100):+.1f}%" if sla_yoy > 0 else "N/A"
+
+        # Variação do Mês contra o Target Mensal Individual
+        desv_mensal_ch = f"{((ch_m - TARGET_MENSAL_CHAMADOS) / TARGET_MENSAL_CHAMADOS * 100):+.1f}%"
+        desv_mensal_inc = f"{((inc_m - TARGET_MENSAL_INCIDENTES) / TARGET_MENSAL_INCIDENTES * 100):+.1f}%"
+        desv_mensal_sla = f"{((sla_m - TARGET_MENSAL_SLA) / TARGET_MENSAL_SLA * 100):+.1f}%"
+
         dados_mm.append({
             "Mês": m.strftime('%m/%Y'), 
             "Chamados": ch_m, 
+            "Var. MoM (Cham.)": mom_ch,
+            "Var. YoY (Cham.)": yoy_ch,
+            "Desv. Target (Cham.)": desv_mensal_ch,
             "Cham. Acum.": acc_ch, 
             "Target Cham.": tgt_ch,
-            "Desvio Cham.": f"{((acc_ch - tgt_ch) / tgt_ch * 100):+.1f}%" if tgt_ch > 0 else "0.0%", 
+            "Desvio Acum. Cham.": f"{((acc_ch - tgt_ch) / tgt_ch * 100):+.1f}%" if tgt_ch > 0 else "0.0%", 
+            
             "Incidentes": inc_m, 
+            "Var. MoM (Inc.)": mom_inc,
+            "Var. YoY (Inc.)": yoy_inc,
+            "Desv. Target (Inc.)": desv_mensal_inc,
             "Incid. Acum.": acc_inc,
             "Target Inc.": tgt_inc, 
-            "Desvio Inc.": f"{((acc_inc - tgt_inc) / tgt_inc * 100):+.1f}%" if tgt_inc > 0 else "0.0%",
+            "Desvio Acum. Inc.": f"{((acc_inc - tgt_inc) / tgt_inc * 100):+.1f}%" if tgt_inc > 0 else "0.0%",
+            
             "SLA Estourado": sla_m, 
+            "Var. MoM (SLA)": mom_sla,
+            "Var. YoY (SLA)": yoy_sla,
+            "Desv. Target (SLA)": desv_mensal_sla,
             "SLA Acum.": acc_sla, 
             "Target SLA": tgt_sla, 
-            "Desvio SLA": f"{((acc_sla - tgt_sla) / tgt_sla * 100):+.1f}%" if tgt_sla > 0 else "0.0%"
+            "Desvio Acum. SLA": f"{((acc_sla - tgt_sla) / tgt_sla * 100):+.1f}%" if tgt_sla > 0 else "0.0%"
         })
 
     df_targets = pd.DataFrame(dados_mm)
-    st.markdown("### 📋 Tabela de Targets Cumulativos M/M (Sem Zabbix)")
+    st.markdown("### 📋 Tabela de Targets Cumulativos M/M & Variações (Sem Zabbix)")
     mostrar_dataframe(df_targets)
 
     st.divider()
