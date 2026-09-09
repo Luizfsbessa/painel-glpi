@@ -33,6 +33,14 @@ aplicar_estilos_customizados()
 st.title("📊 Painel Gerencial & Relatórios GLPI")
 st.caption("Plataforma de inteligência e acompanhamento de chamados (Frescatto)")
 
+# --- LINK DIRETO DO STREAMLIT NA BARRA LATERAL ---
+st.sidebar.markdown("### 🔗 Acesso Rápido")
+st.sidebar.markdown(
+    "[🌐 Abrir Painel no Streamlit]"
+    "(https://painel-glpi-opzwskebbjksedrb4v8aew.streamlit.app)"
+)
+st.sidebar.divider()
+
 # --- CARREGAMENTO AUTOMÁTICO DA BASE DE DADOS ---
 # Utiliza diretamente o arquivo padrão embutido no repositório
 dict_bases = carregar_e_tratar_dados("relatorio glpi.xlsx") if os.path.exists("relatorio glpi.xlsx") else {}
@@ -63,9 +71,8 @@ cols = {
     'loc': buscar_coluna(df_raw, ['Localização', 'Localizacao', 'localizacao', 'Entidade', 'entidade'])
 }
 
-# FILTRO DE PERÍODO NA BARRA LATERAL
-st.sidebar.divider()
-st.sidebar.header("📅 Filtro de Período")
+# FILTRO DE PERÍODO GERAL NA BARRA LATERAL
+st.sidebar.header("📅 Filtro de Período (Painel)")
 
 dt_validas = df_raw['dt_abertura'].dropna()
 min_dt = dt_validas.min() if not dt_validas.empty else pd.Timestamp(2020, 1, 1)
@@ -109,194 +116,161 @@ else:
     criticos_cnt = 0
 
 # -------------------------------------------------------------------------
-# PREPARAÇÃO DADOS PARA O TEAMS
+# CONTROLE DE SENHA E CONFIGURAÇÃO DE ENVIO TEAMS (FLEXÍVEL)
 # -------------------------------------------------------------------------
-df_fechados_notif = df_periodo_sem_zabbix[df_periodo_sem_zabbix['dt_solucao'].notna()].copy() if 'dt_solucao' in df_periodo_sem_zabbix.columns else pd.DataFrame()
-if not df_fechados_notif.empty:
-    df_fechados_notif['tempo_vida_horas'] = (df_fechados_notif['dt_solucao'] - df_fechados_notif['dt_abertura']).dt.total_seconds() / 3600.0
-    df_fechados_notif = df_fechados_notif[df_fechados_notif['tempo_vida_horas'] >= 0]
-    tms_h = df_fechados_notif['tempo_vida_horas'].mean()
-    tms_notif_str = f"{tms_h / 24:.1f} dias" if tms_h >= 48 else f"{tms_h:.1f} hrs"
-    pct_24h_str = f"{(len(df_fechados_notif[df_fechados_notif['tempo_vida_horas'] <= 24]) / len(df_fechados_notif) * 100):.1f}%"
-else:
-    tms_notif_str, pct_24h_str = "N/A", "N/A"
-
-# 1. Backlog Crítico de INCIDENTES (>3 dias em aberto)
-criticos_inc_cnt = 0
-col_tipo = cols.get('tipo')
-
-if not df_bk.empty and col_tipo and col_tipo in df_bk.columns:
-    mask_zabbix = ~df_bk['is_zabbix']
-    mask_dias = df_bk['dias_em_aberto'] >= 3
-    mask_tipo = df_bk[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)
-    
-    df_bk_inc = df_bk[mask_zabbix & mask_dias & mask_tipo]
-    criticos_inc_cnt = len(df_bk_inc)
-
-# 2. String de Incidentes por Prioridade
-prio_notif_str = ""
-if cols['tipo'] and cols['prio'] and cols['tipo'] in df_periodo_sem_zabbix.columns and cols['prio'] in df_periodo_sem_zabbix.columns:
-    df_inc_prio = df_periodo_sem_zabbix[df_periodo_sem_zabbix[cols['tipo']].astype(str).str.contains('Incidente', case=False, na=False)]
-    if not df_inc_prio.empty:
-        prio_counts = df_inc_prio[cols['prio']].value_counts()
-        prio_notif_str = "\n".join([f"• {prio}: {qtd}" for prio, qtd in prio_counts.items()])
-
-# 3. Cálculo Unificado da Quantidade de Meses
-qtd_meses = max(1, (end_dt.year - start_dt.year) * 12 + (end_dt.month - start_dt.month) + 1)
-
-# 4. String de Volume por Área
-def remover_acentos(texto):
-    return ''.join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn').lower()
-
-areas_notif_str = ""
-col_grupo = cols.get('grupo')
-
-if col_grupo and col_tipo and col_grupo in df_periodo_sem_zabbix.columns:
-    target_map = getattr(settings, 'TARGETS_POR_AREA', {})
-    grupos_unicos = df_periodo_sem_zabbix[col_grupo].dropna().unique()
-
-    linhas_area = []
-    for grp in sorted(grupos_unicos):
-        df_grp = df_periodo_sem_zabbix[df_periodo_sem_zabbix[col_grupo] == grp]
-        
-        # Incidentes e SLA da Área
-        df_grp_inc = df_grp[df_grp[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)]
-        tot_inc_grp = len(df_grp_inc)
-        
-        if 'sla_estourado' in df_grp_inc.columns and tot_inc_grp > 0:
-            estourados_grp = len(df_grp_inc[df_grp_inc['sla_estourado']])
-            dentro_sla_grp = tot_inc_grp - estourados_grp
-            taxa_sla_grp = (dentro_sla_grp / tot_inc_grp) * 100
-            sla_str_area = f" | {taxa_sla_grp:.1f}% de SLA ({estourados_grp} estourados)"
-        elif tot_inc_grp > 0:
-            sla_str_area = " | SLA N/A"
-        else:
-            sla_str_area = ""
-        
-        # Requisições
-        df_grp_req = df_grp[df_grp[col_tipo].astype(str).str.contains('Requisi', case=False, na=False)]
-        tot_req_grp = len(df_grp_req)
-        
-        vol_total_area = tot_inc_grp + tot_req_grp
-        
-        # Target por Área
-        grp_norm = remover_acentos(grp)
-        target_val_base = None
-
-        for chave_target, val in target_map.items():
-            chave_norm = remover_acentos(chave_target)
-            if chave_norm in grp_norm or grp_norm in chave_norm:
-                target_val_base = val
-                break
-
-        target_val = (target_val_base * qtd_meses) if target_val_base is not None else None
-
-        target_str = ""
-        if target_val is not None and target_val > 0:
-            pct_diff = ((vol_total_area - target_val) / target_val) * 100
-            if pct_diff > 0:
-                target_str = f" (+{pct_diff:.1f}% Acima do Target)"
-            elif pct_diff < 0:
-                target_str = f" ({pct_diff:.1f}% Abaixo do Target)"
-            else:
-                target_str = " (0.0% Na Meta)"
-        elif target_val is not None and target_val == 0:
-            target_str = " (Target: 0)"
-
-        # Montagem das linhas
-        linha_1 = f"• **{grp}:**{target_str}  "
-        linha_2 = f"↳ {tot_inc_grp} Incidentes{sla_str_area}  "
-        linha_3 = f"↳ {tot_req_grp} Requisições"
-
-        bloco_area = f"{linha_1}\n{linha_2}\n{linha_3}"
-        linhas_area.append(bloco_area)
-        
-    areas_notif_str = "\n\n".join(linhas_area)
-
-# 5. Cálculo do Target Geral de Atendimento
-target_chamados_base = getattr(settings, 'TARGET_MENSAL_CHAMADOS', None)
-target_chamados = (target_chamados_base * qtd_meses) if target_chamados_base else None
-
-target_atend_str = ""
-if target_chamados and target_chamados > 0:
-    pct_diff = ((tot_humanos - target_chamados) / target_chamados) * 100
-    if pct_diff > 0:
-        target_atend_str = f" (+{pct_diff:.1f}% Acima do Target)"
-    elif pct_diff < 0:
-        target_atend_str = f" ({pct_diff:.1f}% Abaixo do Target)"
-    else:
-        target_atend_str = " (0.0% Na Meta)"
-
-tot_humanos_fmt = f"{tot_humanos}{target_atend_str}"
-
-# ------------------------------------------------------------------
-# CONTROLE DE SENHA E ENVIO TEAMS
-# ------------------------------------------------------------------
 st.sidebar.divider()
 st.sidebar.markdown("📢 **Integração Teams**")
 
 SENHA_TEAMS = "corrida"
 senha_digitada = st.sidebar.text_input("Senha de autorização:", type="password", key="input_senha_teams", autocomplete="off")
 
-if st.sidebar.button("🚀 Enviar Resumo no Teams", use_container_width=True):
-    if senha_digitada == SENHA_TEAMS:
-        com_sucesso = enviar_notificacao_teams(
-            settings.WEBHOOK_TEAMS_URL,
-            start_dt.strftime('%d/%m/%Y'), end_dt.strftime('%d/%m/%Y'),
-            tot_geral, tot_humanos_fmt, sla_taxa_str, criticos_inc_cnt, tot_zbx,
-            tms_str=tms_notif_str, pct_resolv_24h=pct_24h_str,
-            prio_str=prio_notif_str, areas_str=areas_notif_str
-        )
-        if com_sucesso:
-            st.sidebar.success("✅ Resumo enviado com sucesso no canal Gestão-GLPI!")
-        else:
-            st.sidebar.error("❌ Falha ao enviar para o Teams. Verifique a URL do Webhook.")
-    else:
-        st.sidebar.error("❌ Acesso negado!")
+if senha_digitada == SENHA_TEAMS:
+    st.sidebar.success("✅ Senha correta! Filtros do Teams liberados.")
+    
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("🎯 **Recorte de Tempo para o Teams:**")
+    
+    # Opção para customizar o período enviado para o Teams separadamente do painel principal
+    usar_periodo_personalizado = st.sidebar.checkbox("Personalizar datas para o Teams?", value=False)
+    
+    if usar_periodo_personalizado:
+        t_ini = st.sidebar.date_input("Início (Teams)", value=dt_ini, min_value=min_date_val, max_value=max_date_val, format="DD/MM/YYYY", key="t_ini")
+        t_fim = st.sidebar.date_input("Fim (Teams)", value=dt_fim, min_value=min_date_val, max_value=max_date_val, format="DD/MM/YYYY", key="t_fim")
         
-        # Bloco seguro para exibir o GIF animado via HTML na barra lateral
-        caminho_gif = "erro login.gif"
-        if os.path.exists(caminho_gif):
-            with open(caminho_gif, "rb") as f:
-                data_gif = f.read()
-                encoded_gif = base64.b64encode(data_gif).decode("utf-8")
-                st.sidebar.markdown(
-                    f"""
-                    <div style="text-align: center;">
-                        <img src="data:image/gif;base64,{encoded_gif}" width="250" style="border-radius: 8px;">
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+        teams_start_dt = pd.Timestamp.combine(t_ini, time(0, 0, 0))
+        teams_end_dt = pd.Timestamp.combine(t_fim, time(23, 59, 59))
+        
+        # Recorta os dados base especificamente para o envio do Teams
+        df_t_periodo = df_raw[(df_raw['dt_abertura'] >= teams_start_dt) & (df_raw['dt_abertura'] <= teams_end_dt)].copy()
+        df_t_sem_zbx = df_t_periodo[~df_t_periodo['is_zabbix']].copy()
+    else:
+        teams_start_dt = start_dt
+        teams_end_dt = end_dt
+        df_t_periodo = df_periodo
+        df_t_sem_zbx = df_periodo_sem_zabbix
+
+    # --- PROCESSAMENTO DOS DADOS ESPECÍFICOS PARA O TEAMS ---
+    tot_t_geral = len(df_t_periodo)
+    tot_t_humanos = len(df_t_sem_zbx)
+    tot_t_zbx = len(df_t_periodo[df_t_periodo['is_zabbix']])
+
+    if cols['tipo'] and cols['tipo'] in df_t_sem_zbx.columns:
+        df_t_inc = df_t_sem_zbx[df_t_sem_zbx[cols['tipo']].astype(str).str.contains('Incidente', case=False, na=False)]
+        t_sla_str = f"{((len(df_t_inc[~df_t_inc['sla_estourado']]) / len(df_t_inc)) * 100):.1f}%" if len(df_t_inc) > 0 else "N/A"
+    else:
+        t_sla_str = "N/A"
+
+    df_t_fechados = df_t_sem_zbx[df_t_sem_zbx['dt_solucao'].notna()].copy() if 'dt_solucao' in df_t_sem_zbx.columns else pd.DataFrame()
+    if not df_t_fechados.empty:
+        df_t_fechados['tempo_vida_horas'] = (df_t_fechados['dt_solucao'] - df_t_fechados['dt_abertura']).dt.total_seconds() / 3600.0
+        df_t_fechados = df_t_fechados[df_t_fechados['tempo_vida_horas'] >= 0]
+        tms_h = df_t_fechados['tempo_vida_horas'].mean()
+        tms_notif_str = f"{tms_h / 24:.1f} dias" if tms_h >= 48 else f"{tms_h:.1f} hrs"
+        pct_24h_str = f"{(len(df_t_fechados[df_t_fechados['tempo_vida_horas'] <= 24]) / len(df_t_fechados) * 100):.1f}%"
+    else:
+        tms_notif_str, pct_24h_str = "N/A", "N/A"
+
+    # Backlog Crítico do Período do Teams
+    df_t_bk = df_t_periodo[~df_t_periodo[cols['status']].astype(str).str.strip().isin(status_fechados)].copy() if cols['status'] else pd.DataFrame()
+    if not df_t_bk.empty:
+        df_t_bk['dias_em_aberto'] = ((pd.Timestamp.now() - df_t_bk['dt_abertura']).dt.total_seconds() / 86400).apply(lambda x: max(0, int(x)) if pd.notna(x) else 0)
+    
+    criticos_inc_cnt = 0
+    col_tipo = cols.get('tipo')
+    if not df_t_bk.empty and col_tipo and col_tipo in df_t_bk.columns:
+        mask_zabbix = ~df_t_bk['is_zabbix']
+        mask_dias = df_t_bk['dias_em_aberto'] >= 3
+        mask_tipo = df_t_bk[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)
+        criticos_inc_cnt = len(df_t_bk[mask_zabbix & mask_dias & mask_tipo])
+
+    # String de Incidentes por Prioridade
+    prio_notif_str = ""
+    if cols['tipo'] and cols['prio'] and cols['tipo'] in df_t_sem_zbx.columns and cols['prio'] in df_t_sem_zbx.columns:
+        df_inc_prio = df_t_sem_zbx[df_t_sem_zbx[cols['tipo']].astype(str).str.contains('Incidente', case=False, na=False)]
+        if not df_inc_prio.empty:
+            prio_counts = df_inc_prio[cols['prio']].value_counts()
+            prio_notif_str = "\n".join([f"• {prio}: {qtd}" for prio, qtd in prio_counts.items()])
+
+    # Cálculo Unificado de Meses para o Teams
+    qtd_meses = max(1, (teams_end_dt.year - teams_start_dt.year) * 12 + (teams_end_dt.month - teams_start_dt.month) + 1)
+
+    # String de Volume por Área
+    def remover_acentos(texto):
+        return ''.join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn').lower()
+
+    areas_notif_str = ""
+    col_grupo = cols.get('grupo')
+
+    if col_grupo and col_tipo and col_grupo in df_t_sem_zbx.columns:
+        target_map = getattr(settings, 'TARGETS_POR_AREA', {})
+        grupos_unicos = df_t_sem_zbx[col_grupo].dropna().unique()
+
+        linhas_area = []
+        for grp in sorted(grupos_unicos):
+            df_grp = df_t_sem_zbx[df_t_sem_zbx[col_grupo] == grp]
+            df_grp_inc = df_grp[df_grp[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)]
+            tot_inc_grp = len(df_grp_inc)
+            
+            if 'sla_estourado' in df_grp_inc.columns and tot_inc_grp > 0:
+                estourados_grp = len(df_grp_inc[df_grp_inc['sla_estourado']])
+                dentro_sla_grp = tot_inc_grp - estourados_grp
+                taxa_sla_grp = (dentro_sla_grp / tot_inc_grp) * 100
+                sla_str_area = f" | {taxa_sla_grp:.1f}% de SLA ({estourados_grp} estourados)"
+            elif tot_inc_grp > 0:
+                sla_str_area = " | SLA N/A"
+            else:
+                sla_str_area = ""
+            
+            df_grp_req = df_grp[df_grp[col_tipo].astype(str).str.contains('Requisi', case=False, na=False)]
+            tot_req_grp = len(df_grp_req)
+            vol_total_area = tot_inc_grp + tot_req_grp
+            
+            grp_norm = remover_acentos(grp)
+            target_val_base = None
+            for chave_target, val in target_map.items():
+                chave_norm = remover_acentos(chave_target)
+                if chave_norm in grp_norm or grp_norm in chave_norm:
+                    target_val_base = val
+                    break
+
+            target_val = (target_val_base * qtd_meses) if target_val_base is not None else None
+            target_str = ""
+            if target_val is not None and target_val > 0:
+                pct_diff = ((vol_total_area - target_val) / target_val) * 100
+                if pct_diff > 0:
+                    target_str = f" (+{pct_diff:.1f}% Acima do Target)"
+                elif pct_diff < 0:
+                    target_str = f" ({pct_diff:.1f}% Abaixo do Target)"
+                else:
+                    target_str = " (0.0% Na Meta)"
+            elif target_val is not None and target_val == 0:
+                target_str = " (Target: 0)"
+
+            linha_1 = f"• **{grp}:**{target_str}  "
+            linha_2 = f"↳ {tot_inc_grp} Incidentes{sla_str_area}  "
+            linha_3 = f"↳ {tot_req_grp} Requisições"
+
+            bloco_area = f"{linha_1}\n{linha_2}\n{linha_3}"
+            linhas_area.append(bloco_area)
+            
+        areas_notif_str = "\n\n".join(linhas_area)
+
+    # Cálculo do Target Geral
+    target_chamados_base = getattr(settings, 'TARGET_MENSAL_CHAMADOS', None)
+    target_chamados = (target_chamados_base * qtd_meses) if target_chamados_base else None
+
+    target_atend_str = ""
+    if target_chamados and target_chamados > 0:
+        pct_diff = ((tot_t_humanos - target_chamados) / target_chamados) * 100
+        if pct_diff > 0:
+            target_atend_str = f" (+{pct_diff:.1f}% Acima do Target)"
+        elif pct_diff < 0:
+            target_atend_str = f" ({pct_diff:.1f}% Abaixo do Target)"
         else:
-            st.sidebar.warning("⚠️ Arquivo do meme não encontrado.")
+            target_atend_str = " (0.0% Na Meta)"
 
-# NAVEGAÇÃO DE MÓDULOS
-modulo = st.sidebar.radio(
-    "Selecione o Módulo / Relatório",
-    [
-        "1 - Dashboard Geral", "2 - Relatórios Gerenciais / Metas", "3 - Relatório de Incidentes & SLA",
-        "4 - Chamados Operacionais", "5 - Visão Exclusiva Zabbix", "6 - Gestão de Backlog & Pendentes",
-        "7 - Problemas e Mudanças", "8 - Desempenho por Técnico", "9 - Comparativo entre Períodos"
-    ]
-)
+    tot_humanos_fmt = f"{tot_t_humanos}{target_atend_str}"
 
-# ROTEAMENTO PARA AS VISÕES
-if modulo == "1 - Dashboard Geral":
-    dashboard_geral.renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt, df_completo=df_periodo)
-elif modulo == "2 - Relatórios Gerenciais / Metas":
-    relatorios_gerenciais.exibir(df_periodo_sem_zabbix, cols)
-elif modulo == "3 - Relatório de Incidentes & SLA":
-    incidentes_sla.renderizar_incidentes_sla(df_periodo_sem_zabbix, cols, start_dt, end_dt)
-elif modulo == "4 - Chamados Operacionais":
-    chamados_operacionais.renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt, df_completo=df_periodo)
-elif modulo == "5 - Visão Exclusiva Zabbix":
-    visao_zabbix.exibir(df_periodo, cols, start_dt, end_dt)
-elif modulo == "6 - Gestão de Backlog & Pendentes":
-    gestao_backlog.renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt, df_completo=df_periodo)
-elif modulo == "7 - Problemas e Mudanças":
-    problemas_mudancas.renderizar(df_problemas, df_mudancas, start_dt=start_dt, end_dt=end_dt)
-elif modulo == "8 - Desempenho por Técnico":
-    desempenho_tecnico.renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt)
-elif modulo == "9 - Comparativo entre Períodos":
-    comparativo_periodos.exibir(df_periodo_sem_zabbix, cols, start_dt, end_dt)
+    # Botão de Disparo do Teams
+    if st.sidebar.button("🚀 Enviar Resumo no Teams", use_container_width=True):
+        com_sucesso = enviar_
