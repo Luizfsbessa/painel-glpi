@@ -18,7 +18,7 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
 
     TARGET_MENSAL_CHAMADOS, TARGET_MENSAL_INCIDENTES, TARGET_MENSAL_SLA = 1134, 164, 53
 
-    # Mapeamento robusto de colunas caso necessário
+    # Mapeamento robusto de colunas
     col_tipo = cols.get('tipo') or next((c for c in df_ger.columns if 'tipo' in str(c).lower()), None)
     col_cat = cols.get('cat') or next((c for c in df_ger.columns if 'cat' in str(c).lower()), None)
     col_grupo = cols.get('grupo') or next((c for c in df_ger.columns if 'grup' in str(c).lower() or 'equipe' in str(c).lower()), None)
@@ -42,19 +42,27 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         st.warning("Nenhum mês válido encontrado para os registros.")
         return
 
-    # Tenta resgatar a base completa global via argumento ou session_state para o YoY funcionar independentemente do filtro da tela
+    # Busca inteligente da base completa global no session_state para garantir o YoY com o histórico anterior (2025)
     df_base_yoy = None
-    if df_completo is not None and not df_completo.empty:
-        df_base_yoy = df_completo.copy()
-    else:
-        for key in st.session_state:
-            val = st.session_state[key]
-            if isinstance(val, pd.DataFrame) and len(val) > len(df_ger):
-                df_base_yoy = val.copy()
-                break
-    
+    min_mes_atual = min(meses_periodo) if meses_periodo else None
+
+    for key in st.session_state:
+        val = st.session_state[key]
+        if isinstance(val, pd.DataFrame) and not val.empty:
+            if 'dt_abertura' in val.columns and 'AnoMes' not in val.columns:
+                val['AnoMes'] = pd.to_datetime(val['dt_abertura'], errors='coerce').dt.to_period('M')
+            if 'AnoMes' in val.columns:
+                if min_mes_atual and val['AnoMes'].min() < min_mes_atual:
+                    df_base_yoy = val.copy()
+                    break
+                elif len(val) > len(df_ger):
+                    df_base_yoy = val.copy()
+
     if df_base_yoy is None or df_base_yoy.empty:
-        df_base_yoy = df_ger.copy()
+        if df_completo is not None and not df_completo.empty:
+            df_base_yoy = df_completo.copy()
+        else:
+            df_base_yoy = df_ger.copy()
 
     if 'dt_abertura' in df_base_yoy.columns and 'AnoMes' not in df_base_yoy.columns:
         df_base_yoy['dt_abertura'] = pd.to_datetime(df_base_yoy['dt_abertura'], errors='coerce')
@@ -88,7 +96,7 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         
         tgt_ch, tgt_inc, tgt_sla = TARGET_MENSAL_CHAMADOS * i, TARGET_MENSAL_INCIDENTES * i, TARGET_MENSAL_SLA * i
 
-        # Cálculo YoY utilizando a base completa global para buscar o mesmo mês do ano anterior
+        # Cálculo YoY utilizando a base completa histórica
         m_yoy = m - 12
         df_yoy = df_base_yoy[df_base_yoy['AnoMes'] == m_yoy] if 'AnoMes' in df_base_yoy.columns else pd.DataFrame()
         ch_yoy = len(df_yoy)
@@ -105,7 +113,7 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         else:
             sla_yoy = 0
 
-        # Cálculo MoM baseado no mês anterior dentro do próprio período filtrado
+        # Cálculo MoM baseado no mês anterior dentro do período filtrado
         if i > 1:
             m_anterior = meses_periodo[i - 2]
             df_ant = df_ger[df_ger['AnoMes'] == m_anterior]
