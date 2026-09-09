@@ -58,17 +58,21 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
                 elif len(val) > len(df_ger):
                     df_base_yoy = val.copy()
 
+    df_base_yoy = None
+    for key in st.session_state:
+        val = st.session_state[key]
+        if isinstance(val, pd.DataFrame) and not val.empty:
+            # Procura a base que possui a maior quantidade de registros (a original inteira)
+            if df_base_yoy is None or len(val) > len(df_base_yoy):
+                df_base_yoy = val.copy()
+
     if df_base_yoy is None or df_base_yoy.empty:
-        if df_completo is not None and not df_completo.empty:
-            df_base_yoy = df_completo.copy()
-        else:
-            df_base_yoy = df_ger.copy()
+        df_base_yoy = df_ger.copy()
 
     if 'dt_abertura' in df_base_yoy.columns and 'AnoMes' not in df_base_yoy.columns:
         df_base_yoy['dt_abertura'] = pd.to_datetime(df_base_yoy['dt_abertura'], errors='coerce')
         df_base_yoy['AnoMes'] = df_base_yoy['dt_abertura'].dt.to_period('M')
 
-    st.write("Anos disponíveis na base YoY:", sorted(df_base_yoy['AnoMes'].dt.year.unique()) if 'AnoMes' in df_base_yoy.columns else "Sem AnoMes")
     # ---------------------------------------------------------
     # 1. TABELA DE TARGETS CUMULATIVOS M/M COM COMPLEMENTOS DE VARIAÇÃO
     # ---------------------------------------------------------
