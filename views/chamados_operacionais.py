@@ -110,57 +110,66 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
     st.divider()
 
     # ---------------------------------------------------------
-    # 3. TOP 10 CATEGORIAS & TOP 10 REQUERENTES
+    # 2.5. FILTRAGEM GLOBAL POR GRUPO TÉCNICO (Aplica-se aos Top 10 e Tabela Geral)
+    # ---------------------------------------------------------
+    st.markdown("### 🔍 Filtrar Dados por Grupo Técnico")
+    st.write("Selecione um Grupo Técnico para filtrar as categorias, os requerentes e a tabela geral abaixo:")
+    
+    opcoes_grupo = ["Todos os Grupos"]
+    if col_grupo and col_grupo in df_humana.columns:
+        opcoes_grupo += sorted(df_humana[col_grupo].dropna().astype(str).unique().tolist())
+        
+    grupo_selecionado = st.selectbox("", opcoes_grupo, key="filtro_grupo_operacionais")
+
+    df_filtrado = df_humana.copy()
+    if grupo_selecionado != "Todos os Grupos" and col_grupo and col_grupo in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado[col_grupo].astype(str) == grupo_selecionado]
+
+    tot_atendimentos_filtrado = len(df_filtrado)
+
+    st.divider()
+
+    # ---------------------------------------------------------
+    # 3. TOP 10 CATEGORIAS & TOP 10 REQUERENTES (Filtrados)
     # ---------------------------------------------------------
     col_l1, col_r1 = st.columns(2)
 
     with col_l1:
         st.markdown("### 🏷️ Top 10 Categorias Mais Demandadas")
-        if col_cat and col_cat in df_humana.columns:
-            top_cat = df_humana[col_cat].value_counts().head(10).reset_index()
+        if col_cat and col_cat in df_filtrado.columns:
+            top_cat = df_filtrado[col_cat].value_counts().head(10).reset_index()
             top_cat.columns = ['Categoria', 'Volume']
-            top_cat['% do Total'] = ((top_cat['Volume'] / tot_atendimentos) * 100).round(1).astype(str) + '%'
+            denom_cat = tot_atendimentos_filtrado if tot_atendimentos_filtrado > 0 else 1
+            top_cat['% do Total'] = ((top_cat['Volume'] / denom_cat) * 100).round(1).astype(str) + '%'
             mostrar_dataframe(top_cat)
 
     with col_r1:
         st.markdown("### 👥 Top 10 Requerentes com Maior Volume")
-        if col_req and col_req in df_humana.columns:
-            top_req = df_humana[col_req].value_counts().head(10).reset_index()
+        if col_req and col_req in df_filtrado.columns:
+            top_req = df_filtrado[col_req].value_counts().head(10).reset_index()
             top_req.columns = ['Requerente', 'Volume de Chamados']
-            top_req['% do Total'] = ((top_req['Volume de Chamados'] / tot_atendimentos) * 100).round(1).astype(str) + '%'
+            denom_req = tot_atendimentos_filtrado if tot_atendimentos_filtrado > 0 else 1
+            top_req['% do Total'] = ((top_req['Volume de Chamados'] / denom_req) * 100).round(1).astype(str) + '%'
             mostrar_dataframe(top_req)
 
     st.divider()
 
     # ---------------------------------------------------------
-    # 4. TOP GRUPOS TÉCNICOS & FILTRO DA TABELA GERAL
+    # 4. TOP GRUPOS TÉCNICOS
     # ---------------------------------------------------------
-    col_l2, col_r2 = st.columns([1, 1])
-
-    with col_l2:
-        st.markdown("### 🛠️ Top Grupos Técnicos")
-        if col_grupo and col_grupo in df_humana.columns:
-            top_grp = df_humana[col_grupo].value_counts().reset_index()
-            top_grp.columns = ['Grupo Técnico', 'Total de Chamados']
-            top_grp['% do Total'] = ((top_grp['Total de Chamados'] / tot_atendimentos) * 100).round(1).astype(str) + '%'
-            mostrar_dataframe(top_grp.head(6))
-        else:
-            top_grp_df = pd.DataFrame({
-                'Grupo Técnico': ['TI > Suporte', 'TI > Desenvolvimento', 'TI > Governança', 'TI > Infraestrutura de TI', 'TI > Segurança TI', 'TI > BI'],
-                'Total de Chamados': [16213, 4396, 2012, 1307, 624, 432],
-                '% do Total': ['64.9%', '17.6%', '8.1%', '5.2%', '2.5%', '1.7%']
-            })
-            mostrar_dataframe(top_grp_df)
-
-    with col_r2:
-        st.markdown("### 🔍 Filtrar Tabela Geral por Grupo")
-        st.write("Selecione um Grupo Técnico para filtrar a base:")
-        
-        opcoes_grupo = ["Todos os Grupos"]
-        if col_grupo and col_grupo in df_humana.columns:
-            opcoes_grupo += sorted(df_humana[col_grupo].dropna().astype(str).unique().tolist())
-            
-        grupo_selecionado = st.selectbox("", opcoes_grupo, key="filtro_grupo_operacionais")
+    st.markdown("### 🛠️ Top Grupos Técnicos")
+    if col_grupo and col_grupo in df_humana.columns:
+        top_grp = df_humana[col_grupo].value_counts().reset_index()
+        top_grp.columns = ['Grupo Técnico', 'Total de Chamados']
+        top_grp['% do Total'] = ((top_grp['Total de Chamados'] / tot_atendimentos) * 100).round(1).astype(str) + '%'
+        mostrar_dataframe(top_grp.head(6))
+    else:
+        top_grp_df = pd.DataFrame({
+            'Grupo Técnico': ['TI > Suporte', 'TI > Desenvolvimento', 'TI > Governança', 'TI > Infraestrutura de TI', 'TI > Segurança TI', 'TI > BI'],
+            'Total de Chamados': [16213, 4396, 2012, 1307, 624, 432],
+            '% do Total': ['64.9%', '17.6%', '8.1%', '5.2%', '2.5%', '1.7%']
+        })
+        mostrar_dataframe(top_grp_df)
 
     st.divider()
 
@@ -169,9 +178,7 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
     # ---------------------------------------------------------
     st.markdown("### 📋 Tabela Geral de Chamados Operacionais (Todos)")
 
-    df_tabela = df_humana.copy()
-    if grupo_selecionado != "Todos os Grupos" and col_grupo and col_grupo in df_tabela.columns:
-        df_tabela = df_tabela[df_tabela[col_grupo].astype(str) == grupo_selecionado]
+    df_tabela = df_filtrado.copy()
 
     # Processa a coluna de tarefas/duração se ela existir no dataset
     col_duracao_possivel = [c for c in df_tabela.columns if 'tarefa' in c.lower() or 'dura' in c.lower()]
