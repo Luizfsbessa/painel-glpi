@@ -7,12 +7,6 @@ from utils.ui_helpers import mostrar_dataframe
 def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=None):
     df_ger = df_periodo_sem_zabbix.copy()
 
-    # Bloco temporario de diagnostico YoY
-    st.write("Chaves no session_state:", list(st.session_state.keys()))
-    for k in st.session_state:
-        if isinstance(st.session_state[k], pd.DataFrame):
-            st.write(f"DataFrame '{k}': min={st.session_state[k]['dt_abertura'].min()}, max={st.session_state[k]['dt_abertura'].max()}, linhas={len(st.session_state[k])}")
-
     dt_inicio_str = start_dt.strftime('%d/%m/%Y') if start_dt else "Início"
     dt_fim_str = end_dt.strftime('%d/%m/%Y') if end_dt else "Fim"
 
@@ -48,16 +42,20 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         st.warning("Nenhum mês válido encontrado para os registros.")
         return
 
-    # Garante o uso da base completa original para o YoY
+    # --- DEFINIÇÃO SEGURA DA BASE GLOBAL PARA O YoY ---
+    df_base_yoy = None
     if df_completo is not None and not df_completo.empty:
-        df_base_yoy = None
-    for k, v in st.session_state.items():
-        if isinstance(v, pd.DataFrame) and len(v) > len(df_ger):
-            df_base_yoy = v.copy()
-            break
-            
+        df_base_yoy = df_completo.copy()
+    elif 'df_bruto_global' in st.session_state and not st.session_state['df_bruto_global'].empty:
+        df_base_yoy = st.session_state['df_bruto_global'].copy()
+    
     if df_base_yoy is None or df_base_yoy.empty:
         df_base_yoy = df_ger.copy()
+
+    # Assegura que a base YoY também tenha a coluna dt_abertura e AnoMes tratadas
+    if 'dt_abertura' in df_base_yoy.columns and 'AnoMes' not in df_base_yoy.columns:
+        df_base_yoy['dt_abertura'] = pd.to_datetime(df_base_yoy['dt_abertura'], errors='coerce')
+        df_base_yoy['AnoMes'] = df_base_yoy['dt_abertura'].dt.to_period('M')
 
     # ---------------------------------------------------------
     # 1. TABELA DE TARGETS CUMULATIVOS M/M COM COMPLEMENTOS DE VARIAÇÃO
