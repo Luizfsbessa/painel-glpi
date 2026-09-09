@@ -314,7 +314,7 @@ modulo = st.sidebar.radio(
 if modulo == "1 - Dashboard Geral":
     dashboard_geral.renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt, df_completo=df_periodo)
 elif modulo == "2 - Relatórios Gerenciais / Metas":
-    relatorios_gerenciais.exibir(df_periodo_sem_zabbix, cols, start_dt, end_dt, df_completo=df_periodo)
+    relatorios_gerenciais.exibir(df_periodo_sem_zabbix, cols, start_dt, end_dt, df_completo=st.session_state.get('df_completo', df_periodo))
 elif modulo == "3 - Relatório de Incidentes & SLA":
     incidentes_sla.renderizar_incidentes_sla(df_periodo_sem_zabbix, cols, start_dt, end_dt)
 elif modulo == "4 - Chamados Operacionais":
