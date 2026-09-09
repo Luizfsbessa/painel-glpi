@@ -30,16 +30,21 @@ from views import (
 st.set_page_config(page_title=settings.APP_TITLE, layout="wide")
 aplicar_estilos_customizados()
 
+# --- FORÇA A REMOÇÃO DE QUALQUER LINK RESIDUAL NA BARRA LATERAL ---
+st.markdown(
+    """
+    <style>
+        /* Esconde qualquer link do Streamlit na sidebar */
+        div[data-testid="stSidebar"] a[href*="streamlit.app"] {
+            display: none !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 st.title("📊 Painel Gerencial & Relatórios GLPI")
 st.caption("Plataforma de inteligência e acompanhamento de chamados (Frescatto)")
-
-# --- LINK DIRETO DO STREAMLIT NA BARRA LATERAL ---
-st.sidebar.markdown("### 🔗 Acesso Rápido")
-st.sidebar.markdown(
-    "[🌐 Abrir Painel no Streamlit]"
-    "(https://painel-glpi-opzwskebbjksedrb4v8aew.streamlit.app)"
-)
-st.sidebar.divider()
 
 # --- CARREGAMENTO AUTOMÁTICO DA BASE DE DADOS ---
 # Utiliza diretamente o arquivo padrão embutido no repositório
@@ -130,7 +135,6 @@ if senha_digitada == SENHA_TEAMS:
     st.sidebar.markdown("---")
     st.sidebar.markdown("🎯 **Recorte de Tempo para o Teams:**")
     
-    # Opção para customizar o período enviado para o Teams separadamente do painel principal
     usar_periodo_personalizado = st.sidebar.checkbox("Personalizar datas para o Teams?", value=False)
     
     if usar_periodo_personalizado:
@@ -140,7 +144,6 @@ if senha_digitada == SENHA_TEAMS:
         teams_start_dt = pd.Timestamp.combine(t_ini, time(0, 0, 0))
         teams_end_dt = pd.Timestamp.combine(t_fim, time(23, 59, 59))
         
-        # Recorta os dados base especificamente para o envio do Teams
         df_t_periodo = df_raw[(df_raw['dt_abertura'] >= teams_start_dt) & (df_raw['dt_abertura'] <= teams_end_dt)].copy()
         df_t_sem_zbx = df_t_periodo[~df_t_periodo['is_zabbix']].copy()
     else:
@@ -170,7 +173,6 @@ if senha_digitada == SENHA_TEAMS:
     else:
         tms_notif_str, pct_24h_str = "N/A", "N/A"
 
-    # Backlog Crítico do Período do Teams
     df_t_bk = df_t_periodo[~df_t_periodo[cols['status']].astype(str).str.strip().isin(status_fechados)].copy() if cols['status'] else pd.DataFrame()
     if not df_t_bk.empty:
         df_t_bk['dias_em_aberto'] = ((pd.Timestamp.now() - df_t_bk['dt_abertura']).dt.total_seconds() / 86400).apply(lambda x: max(0, int(x)) if pd.notna(x) else 0)
@@ -183,7 +185,6 @@ if senha_digitada == SENHA_TEAMS:
         mask_tipo = df_t_bk[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)
         criticos_inc_cnt = len(df_t_bk[mask_zabbix & mask_dias & mask_tipo])
 
-    # String de Incidentes por Prioridade
     prio_notif_str = ""
     if cols['tipo'] and cols['prio'] and cols['tipo'] in df_t_sem_zbx.columns and cols['prio'] in df_t_sem_zbx.columns:
         df_inc_prio = df_t_sem_zbx[df_t_sem_zbx[cols['tipo']].astype(str).str.contains('Incidente', case=False, na=False)]
@@ -191,10 +192,8 @@ if senha_digitada == SENHA_TEAMS:
             prio_counts = df_inc_prio[cols['prio']].value_counts()
             prio_notif_str = "\n".join([f"• {prio}: {qtd}" for prio, qtd in prio_counts.items()])
 
-    # Cálculo Unificado de Meses para o Teams
     qtd_meses = max(1, (teams_end_dt.year - teams_start_dt.year) * 12 + (teams_end_dt.month - teams_start_dt.month) + 1)
 
-    # String de Volume por Área
     def remover_acentos(texto):
         return ''.join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn').lower()
 
@@ -255,7 +254,6 @@ if senha_digitada == SENHA_TEAMS:
             
         areas_notif_str = "\n\n".join(linhas_area)
 
-    # Cálculo do Target Geral
     target_chamados_base = getattr(settings, 'TARGET_MENSAL_CHAMADOS', None)
     target_chamados = (target_chamados_base * qtd_meses) if target_chamados_base else None
 
@@ -271,7 +269,6 @@ if senha_digitada == SENHA_TEAMS:
 
     tot_humanos_fmt = f"{tot_t_humanos}{target_atend_str}"
 
-    # Botão de Disparo do Teams
     if st.sidebar.button("🚀 Enviar Resumo no Teams", use_container_width=True):
         com_sucesso = enviar_notificacao_teams(
             settings.WEBHOOK_TEAMS_URL,

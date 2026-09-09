@@ -5,7 +5,7 @@ def enviar_notificacao_teams(
     backlog_critico, tot_zabbix, tms_str="N/A", pct_resolv_24h="N/A", 
     prio_str="", areas_str=""
 ):
-    """Envia um Adaptive Card executivo formatado para o Microsoft Teams com divisórias."""
+    """Envia um Adaptive Card executivo formatado para o Microsoft Teams com divisórias e link de acesso."""
     
     body_elements = [
         {
@@ -55,11 +55,19 @@ def enviar_notificacao_teams(
             {"type": "TextBlock", "text": areas_str, "wrap": True, "size": "Small"}
         ])
 
+    # Bloco com o Link de Acesso Rápido ao Painel no Streamlit
     body_elements.extend([
         {
             "type": "TextBlock",
             "text": "---------------------------------------------------------------------------------",
             "spacing": "Medium"
+        },
+        {
+            "type": "TextBlock",
+            "text": "🌐 [Abrir Painel no Streamlit](https://painel-glpi-opzwskebbjksedrb4v8aew.streamlit.app)",
+            "size": "Medium",
+            "weight": "Bolder",
+            "wrap": True
         },
         {
             "type": "TextBlock",
