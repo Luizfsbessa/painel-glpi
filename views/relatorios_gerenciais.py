@@ -42,31 +42,10 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         st.warning("Nenhum mês válido encontrado para os registros.")
         return
 
-    # Busca inteligente da base completa global no session_state para garantir o YoY com o histórico anterior (2025)
-    df_base_yoy = None
-    min_mes_atual = min(meses_periodo) if meses_periodo else None
-
-    for key in st.session_state:
-        val = st.session_state[key]
-        if isinstance(val, pd.DataFrame) and not val.empty:
-            if 'dt_abertura' in val.columns and 'AnoMes' not in val.columns:
-                val['AnoMes'] = pd.to_datetime(val['dt_abertura'], errors='coerce').dt.to_period('M')
-            if 'AnoMes' in val.columns:
-                if min_mes_atual and val['AnoMes'].min() < min_mes_atual:
-                    df_base_yoy = val.copy()
-                    break
-                elif len(val) > len(df_ger):
-                    df_base_yoy = val.copy()
-
-    df_base_yoy = None
-    for key in st.session_state:
-        val = st.session_state[key]
-        if isinstance(val, pd.DataFrame) and not val.empty:
-            # Procura a base que possui a maior quantidade de registros (a original inteira)
-            if df_base_yoy is None or len(val) > len(df_base_yoy):
-                df_base_yoy = val.copy()
-
-    if df_base_yoy is None or df_base_yoy.empty:
+    # Garante o uso da base completa original para o YoY
+    if df_completo is not None and not df_completo.empty:
+        df_base_yoy = df_completo.copy()
+    else:
         df_base_yoy = df_ger.copy()
 
     if 'dt_abertura' in df_base_yoy.columns and 'AnoMes' not in df_base_yoy.columns:
