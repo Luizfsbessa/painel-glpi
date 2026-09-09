@@ -273,4 +273,62 @@ if senha_digitada == SENHA_TEAMS:
 
     # Botão de Disparo do Teams
     if st.sidebar.button("🚀 Enviar Resumo no Teams", use_container_width=True):
-        com_sucesso = enviar_
+        com_sucesso = enviar_notificacao_teams(
+            settings.WEBHOOK_TEAMS_URL,
+            teams_start_dt.strftime('%d/%m/%Y'), teams_end_dt.strftime('%d/%m/%Y'),
+            tot_t_geral, tot_humanos_fmt, t_sla_str, criticos_inc_cnt, tot_t_zbx,
+            tms_str=tms_notif_str, pct_resolv_24h=pct_24h_str,
+            prio_str=prio_notif_str, areas_str=areas_notif_str
+        )
+        if com_sucesso:
+            st.sidebar.success("✅ Resumo enviado com sucesso no canal Gestão-GLPI!")
+        else:
+            st.sidebar.error("❌ Falha ao enviar para o Teams. Verifique a URL do Webhook.")
+
+elif senha_digitada != "":
+    st.sidebar.error("❌ Acesso negado!")
+    caminho_gif = "erro login.gif"
+    if os.path.exists(caminho_gif):
+        with open(caminho_gif, "rb") as f:
+            data_gif = f.read()
+            encoded_gif = base64.b64encode(data_gif).decode("utf-8")
+            st.sidebar.markdown(
+                f"""
+                <div style="text-align: center;">
+                    <img src="data:image/gif;base64,{encoded_gif}" width="250" style="border-radius: 8px;">
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+    else:
+        st.sidebar.warning("⚠️ Arquivo do meme não encontrado.")
+
+# NAVEGAÇÃO DE MÓDULOS
+modulo = st.sidebar.radio(
+    "Selecione o Módulo / Relatório",
+    [
+        "1 - Dashboard Geral", "2 - Relatórios Gerenciais / Metas", "3 - Relatório de Incidentes & SLA",
+        "4 - Chamados Operacionais", "5 - Visão Exclusiva Zabbix", "6 - Gestão de Backlog & Pendentes",
+        "7 - Problemas e Mudanças", "8 - Desempenho por Técnico", "9 - Comparativo entre Períodos"
+    ]
+)
+
+# ROTEAMENTO PARA AS VISÕES
+if modulo == "1 - Dashboard Geral":
+    dashboard_geral.renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt, df_completo=df_periodo)
+elif modulo == "2 - Relatórios Gerenciais / Metas":
+    relatorios_gerenciais.exibir(df_periodo_sem_zabbix, cols)
+elif modulo == "3 - Relatório de Incidentes & SLA":
+    incidentes_sla.renderizar_incidentes_sla(df_periodo_sem_zabbix, cols, start_dt, end_dt)
+elif modulo == "4 - Chamados Operacionais":
+    chamados_operacionais.renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt, df_completo=df_periodo)
+elif modulo == "5 - Visão Exclusiva Zabbix":
+    visao_zabbix.exibir(df_periodo, cols, start_dt, end_dt)
+elif modulo == "6 - Gestão de Backlog & Pendentes":
+    gestao_backlog.renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt, df_completo=df_periodo)
+elif modulo == "7 - Problemas e Mudanças":
+    problemas_mudancas.renderizar(df_problemas, df_mudancas, start_dt=start_dt, end_dt=end_dt)
+elif modulo == "8 - Desempenho por Técnico":
+    desempenho_tecnico.renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt)
+elif modulo == "9 - Comparativo entre Períodos":
+    comparativo_periodos.exibir(df_periodo_sem_zabbix, cols, start_dt, end_dt)
