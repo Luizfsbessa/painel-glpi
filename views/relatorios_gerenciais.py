@@ -68,6 +68,7 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         df_base_yoy['dt_abertura'] = pd.to_datetime(df_base_yoy['dt_abertura'], errors='coerce')
         df_base_yoy['AnoMes'] = df_base_yoy['dt_abertura'].dt.to_period('M')
 
+    st.write("Anos disponíveis na base YoY:", sorted(df_base_yoy['AnoMes'].dt.year.unique()) if 'AnoMes' in df_base_yoy.columns else "Sem AnoMes")
     # ---------------------------------------------------------
     # 1. TABELA DE TARGETS CUMULATIVOS M/M COM COMPLEMENTOS DE VARIAÇÃO
     # ---------------------------------------------------------
