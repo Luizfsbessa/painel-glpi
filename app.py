@@ -58,6 +58,9 @@ if df_raw.empty:
     st.error(f"⚠️ O arquivo de dados padrão não foi encontrado ou está vazio no caminho: `relatorio glpi.xlsx`. Verifique se ele foi enviado para o repositório.")
     st.stop()
 
+# Guarda a base bruta global completa na sessão para uso em cálculos históricos (YoY)
+st.session_state['df_bruto_global'] = df_raw.copy()
+
 # Ordena a base principal crescentemente por ID
 if 'ID' in df_raw.columns:
     df_raw['ID'] = pd.to_numeric(df_raw['ID'], errors='coerce')
@@ -314,7 +317,7 @@ modulo = st.sidebar.radio(
 if modulo == "1 - Dashboard Geral":
     dashboard_geral.renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt, df_completo=df_periodo)
 elif modulo == "2 - Relatórios Gerenciais / Metas":
-    relatorios_gerenciais.exibir(df_periodo_sem_zabbix, cols, start_dt, end_dt, df_completo=st.session_state.get('df_completo', df_periodo))
+    relatorios_gerenciais.exibir(df_periodo_sem_zabbix, cols, start_dt, end_dt, df_completo=st.session_state.get('df_bruto_global'))
 elif modulo == "3 - Relatório de Incidentes & SLA":
     incidentes_sla.renderizar_incidentes_sla(df_periodo_sem_zabbix, cols, start_dt, end_dt)
 elif modulo == "4 - Chamados Operacionais":
