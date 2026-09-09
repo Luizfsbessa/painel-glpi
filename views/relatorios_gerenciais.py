@@ -7,6 +7,12 @@ from utils.ui_helpers import mostrar_dataframe
 def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=None):
     df_ger = df_periodo_sem_zabbix.copy()
 
+    # Bloco temporario de diagnostico YoY
+    st.write("Chaves no session_state:", list(st.session_state.keys()))
+    for k in st.session_state:
+        if isinstance(st.session_state[k], pd.DataFrame):
+            st.write(f"DataFrame '{k}': min={st.session_state[k]['dt_abertura'].min()}, max={st.session_state[k]['dt_abertura'].max()}, linhas={len(st.session_state[k])}")
+
     dt_inicio_str = start_dt.strftime('%d/%m/%Y') if start_dt else "Início"
     dt_fim_str = end_dt.strftime('%d/%m/%Y') if end_dt else "Fim"
 
