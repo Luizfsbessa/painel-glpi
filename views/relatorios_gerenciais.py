@@ -42,7 +42,7 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         st.warning("Nenhum mês válido encontrado para os registros.")
         return
 
-    # --- DEFINIÇÃO SEGURA DA BASE GLOBAL PARA O YoY ---
+    # --- DEFINIÇÃO SEGURA DA BASE GLOBAL PARA O YoY E MoM DE JANEIRO ---
     df_base_yoy = None
     if df_completo is not None and not df_completo.empty:
         df_base_yoy = df_completo.copy()
@@ -52,7 +52,7 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
     if df_base_yoy is None or df_base_yoy.empty:
         df_base_yoy = df_ger.copy()
 
-    # Assegura que a base YoY também tenha a coluna dt_abertura e AnoMes tratadas
+    # Assegura que a base global também tenha a coluna dt_abertura e AnoMes tratadas
     if 'dt_abertura' in df_base_yoy.columns and 'AnoMes' not in df_base_yoy.columns:
         df_base_yoy['dt_abertura'] = pd.to_datetime(df_base_yoy['dt_abertura'], errors='coerce')
         df_base_yoy['AnoMes'] = df_base_yoy['dt_abertura'].dt.to_period('M')
@@ -102,19 +102,21 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         else:
             sla_yoy = 0
 
-        # Cálculo MoM baseado no mês anterior dentro do período filtrado
+        # Cálculo MoM (Mês Anterior): Se for o primeiro mês do período (ex: Jan), busca Dez do ano anterior na base global
         if i > 1:
             m_anterior = meses_periodo[i - 2]
             df_ant = df_ger[df_ger['AnoMes'] == m_anterior]
-            ch_ant = len(df_ant)
-            inc_ant = df_ant[df_ant[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)].shape[0] if (col_tipo and col_tipo in df_ant.columns) else len(df_ant)
-            sla_ant = df_ant[(df_ant[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)) & (df_ant[col_sla] == True)].shape[0] if (col_tipo and col_tipo in df_ant.columns and col_sla and col_sla in df_ant.columns) else 0
-            
-            mom_ch = f"{((ch_m - ch_ant) / ch_ant * 100):+.1f}%" if ch_ant > 0 else "0.0%"
-            mom_inc = f"{((inc_m - inc_ant) / inc_ant * 100):+.1f}%" if inc_ant > 0 else "0.0%"
-            mom_sla = f"{((sla_m - sla_ant) / sla_ant * 100):+.1f}%" if sla_ant > 0 else "0.0%"
         else:
-            mom_ch, mom_inc, mom_sla = "-", "-", "-"
+            m_anterior = m - 1
+            df_ant = df_base_yoy[df_base_yoy['AnoMes'] == m_anterior] if 'AnoMes' in df_base_yoy.columns else pd.DataFrame()
+
+        ch_ant = len(df_ant)
+        inc_ant = df_ant[df_ant[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)].shape[0] if (not df_ant.empty and col_tipo and col_tipo in df_ant.columns) else len(df_ant)
+        sla_ant = df_ant[(df_ant[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)) & (df_ant[col_sla] == True)].shape[0] if (not df_ant.empty and col_tipo and col_tipo in df_ant.columns and col_sla and col_sla in df_ant.columns) else 0
+
+        mom_ch = f"{((ch_m - ch_ant) / ch_ant * 100):+.1f}%" if ch_ant > 0 else "0.0%"
+        mom_inc = f"{((inc_m - inc_ant) / inc_ant * 100):+.1f}%" if inc_ant > 0 else "0.0%"
+        mom_sla = f"{((sla_m - sla_ant) / sla_ant * 100):+.1f}%" if sla_ant > 0 else "0.0%"
 
         # Variações YoY e Desvio contra o Target
         yoy_ch = f"{((ch_m - ch_yoy) / ch_yoy * 100):+.1f}%" if ch_yoy > 0 else "N/A"
