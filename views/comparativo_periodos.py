@@ -45,6 +45,10 @@ def exibir(*args, **kwargs):
         st.error("Nenhuma data válida encontrada na base.")
         return
 
+    # Define o dia 01/01 do ano mais recente da base como padrão para o Período B
+    inicio_ano_b = pd.Timestamp(max_date.year, 1, 1).date()
+    default_ini_b = max(min_date, inicio_ano_b)
+
     st.markdown("#### 📅 Seleção dos Períodos para Comparação")
 
     c_p1, c_p2 = st.columns(2)
@@ -55,12 +59,25 @@ def exibir(*args, **kwargs):
 
     with c_p2:
         st.success("📌 **Período B (Recente / Mais Atual)**")
-        data_ini_b = st.date_input("Início Período B:", value=min_date, min_value=min_date, max_value=max_date, format="DD/MM/YYYY", key="comp_p_b_ini")
+        data_ini_b = st.date_input("Início Período B:", value=default_ini_b, min_value=min_date, max_value=max_date, format="DD/MM/YYYY", key="comp_p_b_ini")
         data_fim_b = st.date_input("Fim Período B:", value=max_date, min_value=min_date, max_value=max_date, format="DD/MM/YYYY", key="comp_p_b_fim")
 
     if not data_ini_a or not data_fim_a or not data_ini_b or not data_fim_b:
         st.info("ℹ️ Preencha todas as datas de início e fim para ambos os períodos para gerar o comparativo.")
         return
+
+    # --- FILTRO POR GRUPO TÉCNICO ---
+    st.markdown("---")
+    st.markdown("#### 🏢 Filtro por Grupo Técnico")
+    
+    col_grupo = next((c for c in df_base_comp.columns if 'grupo' in str(c).lower() and ('técnico' in str(c).lower() or 'tecnico' in str(c).lower())), None)
+    
+    if col_grupo:
+        opcoes_grupo = ["Todos os Grupos"] + sorted(df_base_comp[col_grupo].dropna().astype(str).unique().tolist())
+        grupo_selecionado = st.selectbox("Selecione o Grupo Técnico para Filtrar a Visão Comparativa:", opcoes_grupo, key="select_grupo_comparativo")
+    else:
+        st.warning("⚠️ Coluna 'Atribuído - Grupo técnico' não identificada automaticamente na base.")
+        grupo_selecionado = "Todos os Grupos"
 
     start_a = pd.Timestamp.combine(data_ini_a, time(0, 0, 0))
     end_a = pd.Timestamp.combine(data_fim_a, time(23, 59, 59))
@@ -69,6 +86,11 @@ def exibir(*args, **kwargs):
 
     df_per_a = df_base_comp[(df_base_comp['dt_abertura'] >= start_a) & (df_base_comp['dt_abertura'] <= end_a)].copy()
     df_per_b = df_base_comp[(df_base_comp['dt_abertura'] >= start_b) & (df_base_comp['dt_abertura'] <= end_b)].copy()
+
+    # Aplicação do filtro de Grupo Técnico se selecionado
+    if grupo_selecionado != "Todos os Grupos" and col_grupo:
+        df_per_a = df_per_a[df_per_a[col_grupo].astype(str) == grupo_selecionado]
+        df_per_b = df_per_b[df_per_b[col_grupo].astype(str) == grupo_selecionado]
 
     # Criação garantida do objeto de período para uso geral
     df_per_a['periodo_obj'] = df_per_a['dt_abertura'].dt.to_period('M')
