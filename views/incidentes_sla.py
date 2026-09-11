@@ -186,9 +186,24 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt):
     else:
         df_inc = df_periodo_sem_zabbix.copy()
 
-    tot = len(df_inc)
-    if 'sla_estourado' in df_inc.columns and tot > 0:
-        estourados = len(df_inc[df_inc['sla_estourado'] == True])
+    # 1. SELETOR GLOBAL DE GRUPO TÉCNICO NO TOPO (LOGO ABAIXO DO TÍTULO)
+    st.title("🚨 Relatório de Incidentes & Cumprimento de SLA")
+    
+    if cols.get('grupo') and cols['grupo'] in df_inc.columns:
+        grupos = sorted([str(g) for g in df_inc[cols['grupo']].dropna().unique() if str(g).strip() != ''])
+        grupo_geral_sel = st.selectbox(
+            "Selecione um Grupo Técnico (Filtro Geral):",
+            ["Todos os Grupos"] + grupos,
+            key="sel_grupo_geral_incidentes"
+        )
+        df_inc_filtrado = df_inc if grupo_geral_sel == "Todos os Grupos" else df_inc[df_inc[cols['grupo']] == grupo_geral_sel]
+    else:
+        grupo_geral_sel = "Todos os Grupos"
+        df_inc_filtrado = df_inc
+
+    tot = len(df_inc_filtrado)
+    if 'sla_estourado' in df_inc_filtrado.columns and tot > 0:
+        estourados = len(df_inc_filtrado[df_inc_filtrado['sla_estourado'] == True])
         dentro_sla = tot - estourados
         conformidade = (dentro_sla / tot) * 100
     else:
@@ -196,8 +211,6 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt):
         estourados = 0
         conformidade = 100.0
 
-    st.title("🚨 Relatório de Incidentes & Cumprimento de SLA")
-    
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Total de Incidentes", f"{tot:,}".replace(",", "."))
     k2.metric("Dentro do SLA", f"{dentro_sla:,}".replace(",", "."))
