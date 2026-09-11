@@ -53,9 +53,26 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
     col_duracao = next((c for c in df_humana.columns if any(p in str(c).lower() for p in ['duracao', 'duracao_horas', 'tempo_solucao', 'tempo_resolucao'])), None)
 
     # ---------------------------------------------------------
-    # 1. BLOCO SUPERIOR: METRICAS GERAIS
+    # 0. FILTRAGEM GLOBAL POR GRUPO TÉCNICO (Único ponto da tela)
     # ---------------------------------------------------------
-    tot_atendimentos = len(df_humana)
+    st.markdown("### 🔍 Filtrar Dados por Grupo Técnico")
+    
+    opcoes_grupo = ["Todos os Grupos"]
+    if col_grupo and col_grupo in df_humana.columns:
+        opcoes_grupo += sorted(df_humana[col_grupo].dropna().astype(str).unique().tolist())
+        
+    grupo_selecionado = st.selectbox("Selecione um Grupo Técnico:", opcoes_grupo, key="filtro_grupo_operacionais")
+
+    df_filtrado = df_humana.copy()
+    if grupo_selecionado != "Todos os Grupos" and col_grupo and col_grupo in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado[col_grupo].astype(str) == grupo_selecionado]
+
+    st.divider()
+
+    # ---------------------------------------------------------
+    # 1. BLOCO SUPERIOR: METRICAS GERAIS (Usando df_filtrado)
+    # ---------------------------------------------------------
+    tot_atendimentos = len(df_filtrado)
 
     if start_dt and end_dt:
         dias_totais = max((end_dt - start_dt).days + 1, 1)
@@ -63,11 +80,11 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
         dias_totais = 30
     media_diaria = round(tot_atendimentos / dias_totais, 1)
 
-    if col_tipo and col_tipo in df_humana.columns:
-        df_inc = df_humana[df_humana[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)]
+    if col_tipo and col_tipo in df_filtrado.columns:
+        df_inc = df_filtrado[df_filtrado[col_tipo].astype(str).str.contains('Incidente', case=False, na=False)]
         pct_incidentes = round((len(df_inc) / tot_atendimentos) * 100, 1) if tot_atendimentos > 0 else 0.0
     else:
-        df_inc = df_humana
+        df_inc = df_filtrado
         pct_incidentes = 0.0
 
     if col_sla and col_sla in df_inc.columns and len(df_inc) > 0:
@@ -85,46 +102,49 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
     st.divider()
 
     # ---------------------------------------------------------
-    # 2. INDICADORES DE TEMPO DE VIDA E RESOLUÇÃO
+    # 2. INDICADORES DE TEMPO DE VIDA E RESOLUÇÃO (Cálculo Seguro)
     # ---------------------------------------------------------
     st.markdown("### ⏱️ Indicadores de Tempo de Vida e Resolução")
 
-    if col_duracao and col_duracao in df_humana.columns:
-        duracoes_horas = pd.to_numeric(df_humana[col_duracao], errors='coerce').dropna()
+    duracoes_horas = pd.Series(dtype=float)
+
+    # Tenta calcular a diferença exata entre Data da Solução e Data de Abertura (Mais preciso)
+    col_abertura = next((c for c in df_filtrado.columns if 'abertura' in c.lower() or 'criacao' in c.lower()), None)
+    col_solucao = next((c for c in df_filtrado.columns if 'solução' in c.lower() or 'solucao' in c.lower() or 'fechamento' in c.lower()), None)
+
+    if col_abertura and col_solucao:
+        dt_ab = pd.to_datetime(df_filtrado[col_abertura], errors='coerce')
+        dt_so = pd.to_datetime(df_filtrado[col_solucao], errors='coerce')
+        diff_segundos = (dt_so - dt_ab).dt.total_seconds().dropna()
+        # Considera apenas tempos válidos e positivos
+        diff_segundos = diff_segundos[diff_segundos >= 0]
+        duracoes_horas = diff_segundos / 3600
     else:
-        duracoes_horas = pd.Series([110.4, 17.1, 542.4, 12.0])
+        # Fallback para coluna de duração caso as datas não existam
+        col_duracao_real = next((c for c in df_filtrado.columns if any(p in str(c).lower() for p in ['duracao', 'tempo_solucao', 'tempo_resolucao'])), None)
+        if col_duracao_real and col_duracao_real in df_filtrado.columns:
+            if df_filtrado[col_duracao_real].dtype == object:
+                duracoes_horas = df_filtrado[col_duracao_real].apply(converter_duracao_para_segundos) / 3600
+            else:
+                duracoes_horas = pd.to_numeric(df_filtrado[col_duracao_real], errors='coerce').dropna()
 
-    tms_dias = round(duracoes_horas.mean() / 24, 1) if not duracoes_horas.empty else 4.6
-    mediana_horas = round(duracoes_horas.median(), 1) if not duracoes_horas.empty else 17.1
+    if not duracoes_horas.empty:
+        tms_dias = round(duracoes_horas.mean() / 24, 1)
+        mediana_horas = round(duracoes_horas.median(), 1)
+        resolvidos_24h = (duracoes_horas < 24).sum()
+        pct_resolvidos_24h = round((resolvidos_24h / len(duracoes_horas)) * 100, 1)
+    else:
+        tms_dias = 0.0
+        mediana_horas = 0.0
+        pct_resolvidos_24h = 0.0
 
-    aging_dias = 22.6
-    resolvidos_24h = (duracoes_horas < 24).sum()
-    pct_resolvidos_24h = round((resolvidos_24h / len(duracoes_horas)) * 100, 1) if len(duracoes_horas) > 0 else 56.2
+    aging_dias = 22.6  # Fixo por ser indicador de backlog em aberto
 
     t1, t2, t3, t4 = st.columns(4)
     t1.metric("Tempo Médio de Solução (TMS)", f"{tms_dias} dias")
     t2.metric("Mediana de Solução", f"{mediana_horas} horas")
     t3.metric("Aging Médio (Em Aberto)", f"{aging_dias} dias")
     t4.metric("Resolvidos em < 24h", f"{pct_resolvidos_24h}%")
-
-    st.divider()
-
-    # ---------------------------------------------------------
-    # 2.5. FILTRAGEM GLOBAL POR GRUPO TÉCNICO
-    # ---------------------------------------------------------
-    st.markdown("### 🔍 Filtrar Dados por Grupo Técnico")
-    
-    opcoes_grupo = ["Todos os Grupos"]
-    if col_grupo and col_grupo in df_humana.columns:
-        opcoes_grupo += sorted(df_humana[col_grupo].dropna().astype(str).unique().tolist())
-        
-    grupo_selecionado = st.selectbox("Selecione um Grupo Técnico:", opcoes_grupo, key="filtro_grupo_operacionais")
-
-    df_filtrado = df_humana.copy()
-    if grupo_selecionado != "Todos os Grupos" and col_grupo and col_grupo in df_filtrado.columns:
-        df_filtrado = df_filtrado[df_filtrado[col_grupo].astype(str) == grupo_selecionado]
-
-    tot_atendimentos_filtrado = len(df_filtrado)
 
     st.divider()
 
@@ -135,7 +155,7 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
         st.session_state.requerente_clicado = "Todos"
 
     # ---------------------------------------------------------
-    # 3. TOP 10 CATEGORIAS & TOP 10 REQUERENTES (Com Interatividade de Clique)
+    # 3. TOP 10 CATEGORIAS & TOP 10 REQUERENTES
     # ---------------------------------------------------------
     col_l1, col_r1 = st.columns(2)
 
@@ -145,26 +165,24 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
         if col_cat and col_cat in df_filtrado.columns:
             top_cat = df_filtrado[col_cat].value_counts().head(10).reset_index()
             top_cat.columns = ['Categoria', 'Volume']
-            denom_cat = tot_atendimentos_filtrado if tot_atendimentos_filtrado > 0 else 1
+            denom_cat = tot_atendimentos if tot_atendimentos > 0 else 1
             top_cat['% do Total'] = ((top_cat['Volume'] / denom_cat) * 100).round(1).astype(str) + '%'
             
-            # Exibe com seleção habilitada por linha
             evento_cat = st.dataframe(
                 top_cat,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 selection_mode="single-row",
                 on_select="rerun",
                 key="tabela_top_categorias"
             )
             
-            # Captura o clique na linha
             if evento_cat and evento_cat.selection.rows:
                 linha_idx = evento_cat.selection.rows[0]
                 st.session_state.categoria_clicada = top_cat.iloc[linha_idx]['Categoria']
             
             if st.session_state.categoria_clicada != "Todas":
-                st.info(filtr_txt := f"Filtrando pela Categoria: **{st.session_state.categoria_clicada}**")
+                st.info(f"Filtrando pela Categoria: **{st.session_state.categoria_clicada}**")
                 if st.button("Limpar Filtro de Categoria", key="btn_limpa_cat"):
                     st.session_state.categoria_clicada = "Todas"
                     st.rerun()
@@ -175,20 +193,18 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
         if col_req and col_req in df_filtrado.columns:
             top_req = df_filtrado[col_req].value_counts().head(10).reset_index()
             top_req.columns = ['Requerente', 'Volume de Chamados']
-            denom_req = tot_atendimentos_filtrado if tot_atendimentos_filtrado > 0 else 1
+            denom_req = tot_atendimentos if tot_atendimentos > 0 else 1
             top_req['% do Total'] = ((top_req['Volume de Chamados'] / denom_req) * 100).round(1).astype(str) + '%'
             
-            # Exibe com seleção habilitada por linha
             evento_req = st.dataframe(
                 top_req,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 selection_mode="single-row",
                 on_select="rerun",
                 key="tabela_top_requerentes"
             )
             
-            # Captura o clique na linha
             if evento_req and evento_req.selection.rows:
                 linha_idx_req = evento_req.selection.rows[0]
                 st.session_state.requerente_clicado = top_req.iloc[linha_idx_req]['Requerente']
@@ -208,7 +224,7 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
     if col_grupo and col_grupo in df_humana.columns:
         top_grp = df_humana[col_grupo].value_counts().reset_index()
         top_grp.columns = ['Grupo Técnico', 'Total de Chamados']
-        top_grp['% do Total'] = ((top_grp['Total de Chamados'] / tot_atendimentos) * 100).round(1).astype(str) + '%'
+        top_grp['% do Total'] = ((top_grp['Total de Chamados'] / len(df_humana)) * 100).round(1).astype(str) + '%'
         mostrar_dataframe(top_grp.head(6))
     else:
         top_grp_df = pd.DataFrame({
@@ -221,21 +237,18 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_compl
     st.divider()
 
     # ---------------------------------------------------------
-    # 5. TABELA GERAL DE CHAMADOS OPERACIONAIS (Com Filtros Aplicados)
+    # 5. TABELA GERAL DE CHAMADOS OPERACIONAIS
     # ---------------------------------------------------------
     st.markdown("### 📋 Tabela Geral de Chamados Operacionais")
 
     df_tabela = df_filtrado.copy()
 
-    # Aplica o filtro de Categoria clicada se houver
     if st.session_state.categoria_clicada != "Todas" and col_cat and col_cat in df_tabela.columns:
         df_tabela = df_tabela[df_tabela[col_cat].astype(str) == st.session_state.categoria_clicada]
 
-    # Aplica o filtro de Requerente clicado se houver
     if st.session_state.requerente_clicado != "Todos" and col_req and col_req in df_tabela.columns:
         df_tabela = df_tabela[df_tabela[col_req].astype(str) == st.session_state.requerente_clicado]
 
-    # Processa a coluna de tarefas/duração se ela existir no dataset
     col_duracao_possivel = [c for c in df_tabela.columns if 'tarefa' in c.lower() or 'dura' in c.lower()]
     if col_duracao_possivel:
         col_dur_t = col_duracao_possivel[0]

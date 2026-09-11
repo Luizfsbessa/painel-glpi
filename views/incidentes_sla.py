@@ -30,35 +30,14 @@ def formatar_segundos_para_humano(total_segundos):
     else:
         return f"{m}m"
 
-def renderizar_conteudo_analitico(df, cols, key_prefix=""):
-    if df.empty:
+def renderizar_conteudo_analitico(df_f, cols, key_prefix=""):
+    if df_f.empty:
         st.info("Nenhum registro encontrado para os filtros selecionados.")
         return
 
-    # 1. SELETOR DE GRUPO TÉCNICO NO TOPO
-    st.markdown("### 🎯 Filtro por Grupo Técnico")
-    if cols.get('grupo') and cols['grupo'] in df.columns:
-        grupos = sorted([str(g) for g in df[cols['grupo']].dropna().unique() if str(g).strip() != ''])
-        grupo_sel = st.selectbox(
-            "Selecione um Grupo Técnico:",
-            ["Todos os Grupos"] + grupos,
-            key=f"sel_grupo_{key_prefix}"
-        )
-        
-        df_f = df if grupo_sel == "Todos os Grupos" else df[df[cols['grupo']] == grupo_sel]
-    else:
-        grupo_sel = "Todos os Grupos"
-        df_f = df
-
     tot_f = len(df_f)
 
-    if df_f.empty:
-        st.warning("Nenhum registro encontrado para este Grupo Técnico.")
-        return
-
-    st.divider()
-
-    # 2. Resumo de Indicadores
+    # 1. Resumo de Indicadores
     st.markdown("### 📊 Resumo de Indicadores")
     c_m, c_p, c_g = st.columns([1, 1.2, 1.8])
 
@@ -82,7 +61,7 @@ def renderizar_conteudo_analitico(df, cols, key_prefix=""):
 
     st.divider()
 
-    # 3. Análise de Criticidade
+    # 2. Análise de Criticidade
     st.markdown("### ⚠️ Análise de Criticidade")
     if cols.get('prio') and cols['prio'] in df_f.columns:
         df_crit = df_f[cols['prio']].value_counts().reset_index()
@@ -92,7 +71,7 @@ def renderizar_conteudo_analitico(df, cols, key_prefix=""):
 
     st.divider()
 
-    # 4. Top 10 Categorias de Incidentes
+    # 3. Top 10 Categorias de Incidentes
     st.markdown("### 🏷️ Top 10 Categorias de Incidentes")
     if cols.get('cat') and cols['cat'] in df_f.columns:
         top_cat = df_f[cols['cat']].value_counts().head(10).reset_index()
@@ -102,7 +81,7 @@ def renderizar_conteudo_analitico(df, cols, key_prefix=""):
 
     st.divider()
 
-    # 5. Top 10 Requerentes
+    # 4. Top 10 Requerentes
     st.markdown(f"### 👥 Top 10 Requerentes com Mais Incidentes")
     if cols.get('req') and cols['req'] in df_f.columns:
         top_req = df_f[cols['req']].value_counts().head(10).reset_index()
@@ -112,7 +91,7 @@ def renderizar_conteudo_analitico(df, cols, key_prefix=""):
 
     st.divider()
 
-    # 6. Detalhamento dos Chamados (Cabeçalhos com iniciais maiúsculas padronizadas)
+    # 5. Detalhamento dos Chamados
     st.markdown("### 📄 Detalhamento dos Chamados")
     
     df_exibicao = df_f.copy()
@@ -186,13 +165,13 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt):
     else:
         df_inc = df_periodo_sem_zabbix.copy()
 
-    # 1. SELETOR GLOBAL DE GRUPO TÉCNICO NO TOPO (LOGO ABAIXO DO TÍTULO)
     st.title("🚨 Relatório de Incidentes & Cumprimento de SLA")
     
+    # 🎯 SELETOR ÚNICO DE GRUPO TÉCNICO NO TOPO
     if cols.get('grupo') and cols['grupo'] in df_inc.columns:
         grupos = sorted([str(g) for g in df_inc[cols['grupo']].dropna().unique() if str(g).strip() != ''])
         grupo_geral_sel = st.selectbox(
-            "Selecione um Grupo Técnico (Filtro Geral):",
+            "Selecione um Grupo Técnico:",
             ["Todos os Grupos"] + grupos,
             key="sel_grupo_geral_incidentes"
         )
@@ -222,10 +201,10 @@ def renderizar(df_periodo_sem_zabbix, cols, start_dt, end_dt):
     tab_todos, tab_estourados = st.tabs(["📋 Todos os Incidentes", "🚨 Incidentes com SLA Estourado"])
 
     with tab_todos:
-        renderizar_conteudo_analitico(df_inc, cols, key_prefix="todos")
+        renderizar_conteudo_analitico(df_inc_filtrado, cols, key_prefix="todos")
 
     with tab_estourados:
-        df_est = df_inc[df_inc['sla_estourado'] == True] if 'sla_estourado' in df_inc.columns else pd.DataFrame()
+        df_est = df_inc_filtrado[df_inc_filtrado['sla_estourado'] == True] if 'sla_estourado' in df_inc_filtrado.columns else pd.DataFrame()
         renderizar_conteudo_analitico(df_est, cols, key_prefix="estourados")
 
 def renderizar_incidentes_sla(*args, **kwargs):
