@@ -69,10 +69,13 @@ def carregar_e_tratar_dados(file_source):
             df_raw['dt_solucao'] = pd.to_datetime(df_raw[col_sol], dayfirst=True, errors='coerce') if col_sol else pd.NaT
             df_raw['sla_estourado'] = (df_raw[col_sla].astype(str).str.strip().str.lower() == 'sim') if col_sla else False
 
-            zabbix_cols = [c for c in df_raw.columns if 'requerente' in c.lower()] or df_raw.select_dtypes(include='object').columns.tolist()
+            # Correção aplicada: busca restrita estritamente à coluna de requerente
+            col_requerente = buscar_coluna(df_raw, ['Requerente - Requerente', 'Requerente', 'requerente'])
             mask_zabbix = pd.Series(False, index=df_raw.index)
-            for c in zabbix_cols:
-                mask_zabbix |= df_raw[c].astype(str).str.contains('zabbix', case=False, na=False)
+            
+            if col_requerente:
+                mask_zabbix = df_raw[col_requerente].astype(str).str.contains('zabbix', case=False, na=False)
+                
             df_raw['is_zabbix'] = mask_zabbix
             dict_dfs["Chamados"] = df_raw
 
