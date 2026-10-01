@@ -118,7 +118,6 @@ def renderizar(*args, **kwargs):
       None,
   )
 
-  # Status oficiais mapeados com base no GLPI e na imagem fornecida
   status_concluidos = ['Fechado', 'Aplicado', 'Solucionado', 'Closed', 'Resolved', 'Concluído']
   status_cancelados = ['Cancelado']
   status_em_andamento = ['Novo', 'Avaliação', 'Aprovação', 'Aceito', 'Testando', 'Pendente', 'Revisão']
@@ -159,7 +158,7 @@ def renderizar(*args, **kwargs):
       mostrar_dataframe(df_exibicao, height=400)
 
   tab_problemas, tab_mudancas = st.tabs(
-      ['⚠️️ Painel de Problemas', '🔀 Painel de Mudanças']
+      ['⚠️ Painel de Problemas', '🔀 Painel de Mudanças']
   )
 
   # --- ABA 1: PROBLEMAS ---
@@ -198,7 +197,6 @@ def renderizar(*args, **kwargs):
       cancelados_mud = len(df_mudancas[s_col.isin(status_cancelados)])
       and_mud = len(df_mudancas[s_col.isin(status_em_andamento)])
       
-      # Caso apareça algum status atípico fora da lista, contabiliza no "Em Andamento" por segurança
       outros_mud = tot_mud - (conc_mud + cancelados_mud + and_mud)
       if outros_mud > 0:
         and_mud += outros_mud
@@ -212,8 +210,23 @@ def renderizar(*args, **kwargs):
     c4.metric('Cancelados', cancelados_mud)
 
     st.divider()
+
+    # Remover colunas irrelevantes apenas para a exibição na tabela de mudanças
+    colunas_para_remover = [
+        'Plug-ins - Meta da Mudança - Meta',
+        'Plug-ins - Setor da Mudança - Setor',
+        'Plug-ins - Etapa da Mudança - Etapa Atual',
+        'Notas - Notas',
+        'Plug-ins - Etiquetas',
+        'Plug-ins - Estrategia de Valor - Ganho Esperado'
+    ]
+    df_mudancas_exibicao = df_mudancas.drop(
+        columns=[c for c in colunas_para_remover if c in df_mudancas.columns],
+        errors='ignore'
+    )
+
     url_mudanca = 'https://glpi.dominio.local/ssi/front/change.form.php?id='
-    renderizar_com_link(df_mudancas, url_mudanca, 'ID da Mudança')
+    renderizar_com_link(df_mudancas_exibicao, url_mudanca, 'ID da Mudança')
 
 
 def exibir(*args, **kwargs):
