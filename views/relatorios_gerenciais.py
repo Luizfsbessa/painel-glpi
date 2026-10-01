@@ -22,12 +22,19 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
         "bi": 11,
         "ti > bi": 11,
         "desenvolvimento": 194,
+        "ti > desenvolvimento": 194,
         "suporte": 724,
+        "ti > suporte": 724,
         "governança": 86,
         "governanca": 86,
+        "ti > governança": 86,
+        "ti > governanca": 86,
         "infraestrutura de ti": 61,
+        "ti > infraestrutura de ti": 61,
         "segurança de ti": 22,
-        "seguranca de ti": 22
+        "seguranca de ti": 22,
+        "ti > segurança de ti": 22,
+        "ti > seguranca de ti": 22
     }
 
     col_tipo = cols.get('tipo') or next((c for c in df_ger.columns if 'tipo' in str(c).lower()), None)
@@ -36,6 +43,17 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
     col_loc = cols.get('loc') or next((c for c in df_ger.columns if 'loc' in str(c).lower() or 'entidade' in str(c).lower()), None)
     col_sla = cols.get('sla_estourado') or next((c for c in df_ger.columns if 'sla' in str(c).lower() or 'estourado' in str(c).lower()), None)
     col_abertura = next((c for c in df_ger.columns if any(p in str(c).lower() for p in ['abertura', 'criacao', 'data_abertura', 'created'])), 'dt_abertura')
+
+    # Padroniza a coluna de grupo para sempre incluir o prefixo "TI > " se já não o tiver
+    if col_grupo and col_grupo in df_ger.columns:
+        def padronizar_grupo(val):
+            if pd.isna(val) or str(val).strip() == '':
+                return val
+            s_val = str(val).strip()
+            if not s_val.lower().startswith("ti >"):
+                return f"TI > {s_val}"
+            return s_val
+        df_ger[col_grupo] = df_ger[col_grupo].apply(padronizar_grupo)
 
     if 'dt_abertura' in df_ger.columns and 'AnoMes' not in df_ger.columns:
         df_ger['AnoMes'] = df_ger['dt_abertura'].dt.to_period('M')
@@ -60,6 +78,10 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
     
     if df_base_yoy is None or df_base_yoy.empty:
         df_base_yoy = df_ger.copy()
+
+    # Aplica a mesma normalização de grupo no dataset YoY se aplicável
+    if col_grupo and col_grupo in df_base_yoy.columns:
+        df_base_yoy[col_grupo] = df_base_yoy[col_grupo].apply(padronizar_grupo)
 
     if 'dt_abertura' in df_base_yoy.columns and 'AnoMes' not in df_base_yoy.columns:
         df_base_yoy['dt_abertura'] = pd.to_datetime(df_base_yoy['dt_abertura'], errors='coerce')
@@ -169,9 +191,6 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
     df_targets = pd.DataFrame(dados_mm)
     df_targets.columns = pd.MultiIndex.from_tuples(df_targets.columns)
 
-    def centralizar_tabela(s):
-        return 'text-align: center; vertical-align: middle;'
-
     st.markdown("### 📋 Tabela Consolidada por Blocos (Chamados, Incidentes e SLA)")
     
     html_tabela = df_targets.to_html(index=False, classes="table-centralizada")
@@ -268,10 +287,21 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
                 df_sub = df_filtrado_setor[df_filtrado_setor[col_grupo].astype(str) == setor]
                 qtd_por_mes = df_sub.groupby('AnoMes').size()
                 y_values = [int(qtd_por_mes.get(m, 0)) for m in meses_periodo]
+                
+                # Adiciona a barra do setor
                 fig_setor.add_trace(go.Bar(x=todos_meses_str, y=y_values, name=setor, text=y_values, textposition='auto'))
 
                 setor_key_clean = setor.strip().lower()
                 target_especifico = TARGETS_POR_GRUPO.get(setor_key_clean, 50)
+
+                # Adiciona a linha de target específica para o setor
+                fig_setor.add_trace(go.Scatter(
+                    x=todos_meses_str, 
+                    y=[target_especifico] * len(todos_meses_str), 
+                    mode='lines', 
+                    name=f'Target ({setor}: {target_especifico})', 
+                    line=dict(width=2, dash='dash')
+                ))
 
                 for m in meses_periodo:
                     qtd_m = int(qtd_por_mes.get(m, 0))
@@ -282,17 +312,6 @@ def exibir(df_periodo_sem_zabbix, cols, start_dt=None, end_dt=None, df_completo=
                         'Target': target_especifico, 
                         'Status': "🔴 Acima da Meta" if qtd_m > target_especifico else "🟢 Dentro da Meta"
                     })
-
-            for setor in setores_selecionados:
-                setor_key_clean = setor.strip().lower()
-                target_especifico = TARGETS_POR_GRUPO.get(setor_key_clean, 50)
-                fig_setor.add_trace(go.Scatter(
-                    x=todos_meses_str, 
-                    y=[target_especifico] * len(todos_meses_str), 
-                    mode='lines', 
-                    name=f'Target ({setor}: {target_especifico})', 
-                    line=dict(color='#ff7f0e', width=2, dash='dash')
-                ))
 
             fig_setor.update_layout(title=dict(text="Evolução Mensal vs. Target Individual por Setor", font=dict(size=16)), xaxis_title="Mês/Ano", yaxis_title="Quantidade", barmode='group', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), margin=dict(l=20, r=20, t=60, b=40), height=480)
             st.plotly_chart(fig_setor, use_container_width=True)
