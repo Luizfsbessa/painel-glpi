@@ -75,6 +75,39 @@ def renderizar(*args, **kwargs):
       df_problemas = pd.DataFrame()
       df_mudancas = pd.DataFrame()
 
+  # 3. APLICAR FILTRO DE DATA (Respeitando rigorosamente o período selecionado)
+  if start_dt and end_dt:
+    dt_inicio = pd.to_datetime(start_dt)
+    dt_fim = pd.to_datetime(end_dt)
+
+    for df_target_name in ['df_problemas', 'df_mudancas']:
+      df_target = (
+          df_problemas if df_target_name == 'df_problemas' else df_mudancas
+      )
+      if not df_target.empty:
+        col_data = next(
+            (
+                c
+                for c in df_target.columns
+                if any(
+                    k in str(c).lower() for k in ['data de abertura', 'data']
+                )
+            ),
+            None,
+        )
+        if col_data:
+          df_target[col_data] = pd.to_datetime(
+              df_target[col_data], errors='coerce'
+          )
+          mask = (df_target[col_data] >= dt_inicio) & (
+              df_target[col_data] <= dt_fim
+          )
+          filtered_df = df_target[mask].copy()
+          if df_target_name == 'df_problemas':
+            df_problemas = filtered_df
+          else:
+            df_mudancas = filtered_df
+
   col_status = cols.get('status') or next(
       (
           c
@@ -99,7 +132,7 @@ def renderizar(*args, **kwargs):
   # Função auxiliar interna para renderizar tabela aplicando o link correto do GLPI
   def renderizar_com_link(df_src, url_base, label_id):
     if df_src.empty:
-      st.info('Nenhum registro encontrado.')
+      st.info('Nenhum registro encontrado para este período.')
       return
 
     df_exibicao = df_src.loc[:, ~df_src.columns.duplicated()].copy()
@@ -134,7 +167,7 @@ def renderizar(*args, **kwargs):
     else:
       mostrar_dataframe(df_exibicao, height=400)
 
-  # 3. CRIAÇÃO DAS ABAS
+  # 4. CRIAÇÃO DAS ABAS
   tab_problemas, tab_mudancas = st.tabs(
       ['⚠️ Painel de Problemas', '🔀 Painel de Mudanças']
   )
