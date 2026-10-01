@@ -9,7 +9,6 @@ def renderizar(*args, **kwargs):
   df_mud_in = None
   df_base = None
 
-  # Verifica se os dois primeiros argumentos são DataFrames prontos (ex: df_problemas, df_mudancas)
   if (
       len(args) >= 2
       and isinstance(args[0], pd.DataFrame)
@@ -18,7 +17,6 @@ def renderizar(*args, **kwargs):
     df_prob_in = args[0]
     df_mud_in = args[1]
 
-  # Recupera parâmetros por nome
   df_periodo_sem_zabbix = kwargs.get('df_periodo_sem_zabbix')
   df_completo = kwargs.get('df_completo')
   cols = kwargs.get('cols', {})
@@ -44,7 +42,6 @@ def renderizar(*args, **kwargs):
     df_problemas = df_prob_in.copy()
     df_mudancas = df_mud_in.copy()
   else:
-    # Tenta extrair da base disponível
     df_base = (
         df_completo
         if (df_completo is not None and not df_completo.empty)
@@ -75,7 +72,7 @@ def renderizar(*args, **kwargs):
       df_problemas = pd.DataFrame()
       df_mudancas = pd.DataFrame()
 
-  # 3. APLICAR FILTRO DE DATA (Respeitando rigorosamente o período selecionado)
+  # 3. APLICAR FILTRO DE DATA
   if start_dt and end_dt:
     dt_inicio = pd.to_datetime(start_dt)
     dt_fim = pd.to_datetime(end_dt)
@@ -120,24 +117,18 @@ def renderizar(*args, **kwargs):
       ),
       None,
   )
-  status_concluidos = [
-      'Solucionado',
-      'Fechado',
-      'Closed',
-      'Resolved',
-      'Concluído',
-      'Aplicado',
-  ]
 
-  # Função auxiliar interna para renderizar tabela aplicando o link correto do GLPI
+  # Status oficiais mapeados com base no GLPI e na imagem fornecida
+  status_concluidos = ['Fechado', 'Aplicado', 'Solucionado', 'Closed', 'Resolved', 'Concluído']
+  status_cancelados = ['Cancelado']
+  status_em_andamento = ['Novo', 'Avaliação', 'Aprovação', 'Aceito', 'Testando', 'Pendente', 'Revisão']
+
   def renderizar_com_link(df_src, url_base, label_id):
     if df_src.empty:
       st.info('Nenhum registro encontrado para este período.')
       return
 
     df_exibicao = df_src.loc[:, ~df_src.columns.duplicated()].copy()
-
-    # Tenta achar a coluna de ID para transformar em link
     col_id_cand = next(
         (
             c
@@ -167,15 +158,13 @@ def renderizar(*args, **kwargs):
     else:
       mostrar_dataframe(df_exibicao, height=400)
 
-  # 4. CRIAÇÃO DAS ABAS
   tab_problemas, tab_mudancas = st.tabs(
-      ['⚠️ Painel de Problemas', '🔀 Painel de Mudanças']
+      ['⚠️️ Painel de Problemas', '🔀 Painel de Mudanças']
   )
 
   # --- ABA 1: PROBLEMAS ---
   with tab_problemas:
     tot_prob = len(df_problemas)
-
     if (
         not df_problemas.empty
         and col_status
@@ -196,7 +185,6 @@ def renderizar(*args, **kwargs):
     c3.metric('Concluídos / Solucionados', conc_prob)
 
     st.divider()
-
     url_problema = 'https://glpi.dominio.local/ssi/front/problem.form.php?id='
     renderizar_com_link(df_problemas, url_problema, 'ID do Problema')
 
@@ -205,17 +193,15 @@ def renderizar(*args, **kwargs):
     tot_mud = len(df_mudancas)
 
     if not df_mudancas.empty and col_status and col_status in df_mudancas.columns:
-      conc_mud = len(
-          df_mudancas[
-              df_mudancas[col_status].astype(str).isin(status_concluidos)
-          ]
-      )
-      cancelados_mud = len(
-          df_mudancas[
-              df_mudancas[col_status].astype(str).str.lower() == 'cancelado'
-          ]
-      )
-      and_mud = tot_mud - conc_mud - cancelados_mud
+      s_col = df_mudancas[col_status].astype(str)
+      conc_mud = len(df_mudancas[s_col.isin(status_concluidos)])
+      cancelados_mud = len(df_mudancas[s_col.isin(status_cancelados)])
+      and_mud = len(df_mudancas[s_col.isin(status_em_andamento)])
+      
+      # Caso apareça algum status atípico fora da lista, contabiliza no "Em Andamento" por segurança
+      outros_mud = tot_mud - (conc_mud + cancelados_mud + and_mud)
+      if outros_mud > 0:
+        and_mud += outros_mud
     else:
       conc_mud, and_mud, cancelados_mud = 0, tot_mud, 0
 
@@ -226,7 +212,6 @@ def renderizar(*args, **kwargs):
     c4.metric('Cancelados', cancelados_mud)
 
     st.divider()
-
     url_mudanca = 'https://glpi.dominio.local/ssi/front/change.form.php?id='
     renderizar_com_link(df_mudancas, url_mudanca, 'ID da Mudança')
 
